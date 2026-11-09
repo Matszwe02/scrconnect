@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: 2023 Nicolas Fella <nicolas.fella@gmx.de>
+# SPDX-FileCopyrightText: 2023 Simon Redman <simon@ergotech.com>
+# SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
+#
+# Test this pipeline locally by:
+# - Set up Docker on your machine, if not already set up
+# - Set up gitlab-runner, as described here: https://stackoverflow.com/a/52724374
+# - Run `gitlab-runner exec docker --docker-privileged buildLintAndTest`
+
+variables:
+  # Version from https://developer.android.com/studio#command-line-tools-only
+  ANDROID_SDK_TOOLS:   "15859902"
+
+default:
+  tags:
+    - Linux
+  image: ubuntu:26.04
+  before_script:
+    # Install Java and Android SDK
+    - apt-get --quiet update --yes
+    - apt-get --quiet install --yes wget tar unzip openjdk-21-jdk-headless
+    - wget --no-verbose -O android-sdk.zip "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_SDK_TOOLS}_latest.zip"
+    # Create ANDROID_HOME structure
+    - mkdir -p sdk/cmdline-tools
+    - unzip android-sdk.zip
+    - mv cmdline-tools sdk/cmdline-tools/latest
+    - export ANDROID_HOME=$PWD/sdk
+    - export PATH=$PATH:$PWD/sdk/cmdline-tools/latest/bin
+    - (yes || true) | sdkmanager --licenses
+
+stages:
+  - buildLintAndTest
+
+buildLintAndTest:
+  stage: buildLintAndTest
+  script:
+    - ./gradlew --no-daemon -Pci --console=plain assembleDebug lintDebug testDebugUnitTest
+  artifacts:
+    paths:
+    - build/outputs/

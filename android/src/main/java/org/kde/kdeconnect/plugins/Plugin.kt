@@ -302,6 +302,8 @@ abstract class Plugin {
         return arePermissionsGranted(optionalPermissions)
     }
 
+    open fun openPermissionsSetup(activity: Activity): Boolean = false
+
     open fun loadPluginWhenRequiredPermissionsMissing(): Boolean = false
 
     @EmptySuper

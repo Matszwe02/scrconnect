@@ -675,4 +675,30 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
     <string name="pref_mpris_volume_control_summary">Control the connected device\'s media volume using this phone\'s hardware buttons</string>
 
     <string name="pref_notification_screen_off_key" translatable="false">pref_notification_screen_off</string>
+
+    <string name="mirror_setup_title">ADB setup</string>
+    <string name="mirror_setup_checking">Checking your phone…</string>
+    <string name="mirror_setup_intro">Screen mirroring, camera sharing, sending copied text automatically and Phone Leap use ADB over wireless debugging. Set it up once, here on the phone: it keeps working by itself afterwards, also after restarts. This page follows your steps.</string>
+    <string name="mirror_check_android">Android 11 or newer</string>
+    <string name="mirror_check_wifi">Connected to Wi-Fi</string>
+    <string name="mirror_check_developer">Developer options on</string>
+    <string name="mirror_check_wireless">Wireless debugging on</string>
+    <string name="mirror_check_paired">Paired with this app</string>
+    <string name="mirror_step_unsupported">Wireless debugging needs Android 11 or newer: the features that use the ADB setup are not available on this phone.</string>
+    <string name="mirror_step_wifi">Connect the phone to a Wi-Fi network (a hotspot works too): wireless debugging only works on Wi-Fi.</string>
+    <string name="mirror_step_developer">Turn on the developer options: in Settings → About phone, tap “Build number” 7 times.</string>
+    <string name="mirror_step_wireless">In Settings → Developer options, turn on “Wireless debugging” and allow it on this network.</string>
+    <string name="mirror_step_pair">In Settings → Developer options → Wireless debugging, tap “Pair device with pairing code”, then type the 6 digit code into SCR Connect\'s notification.</string>
+    <string name="mirror_step_done">All set.</string>
+    <string name="mirror_hint_xiaomi">To control the phone from the computer, also turn on “USB debugging (Security settings)” in Developer options.</string>
+    <string name="mirror_hint_oppo">If the computer cannot control the phone, turn on “Disable permission monitoring” in Developer options.</string>
+    <string name="mirror_open_wifi">Open Wi-Fi settings</string>
+    <string name="mirror_open_about">Open About phone</string>
+    <string name="mirror_open_developer">Open Developer options</string>
+    <string name="mirror_pair">Pair</string>
+    <string name="mirror_pairing_code_hint">Pairing code</string>
+    <string name="mirror_notification_enter_code">Type the 6 digit pairing code shown on screen</string>
+    <string name="mirror_pairing_bad_code">The pairing code has 6 digits</string>
+    <string name="mirror_pairing_no_dialog">The pairing dialog was not found. Keep “Pair device with pairing code” open and try again.</string>
+    <string name="mirror_pairing_failed">Pairing failed. Check the code and try again.</string>
 </resources>

@@ -252,16 +252,14 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
                                     pluginsNeedOptionalPermissions = pluginsNeedOptionalPermissions,
                                     onButtonClick = { button -> button.onClick(mActivity!!) },
                                     actionNeedPermissions = { plugin ->
-                                        plugin.permissionExplanationDialog.show(
-                                            childFragmentManager,
-                                            null
-                                        )
+                                        if (!plugin.openPermissionsSetup(mActivity!!)) {
+                                            plugin.permissionExplanationDialog.show(childFragmentManager, null)
+                                        }
                                     },
                                     actionNeedOptionalPermissions = { plugin ->
-                                        plugin.optionalPermissionExplanationDialog.show(
-                                            childFragmentManager,
-                                            null
-                                        )
+                                        if (!plugin.openPermissionsSetup(mActivity!!)) {
+                                            plugin.optionalPermissionExplanationDialog.show(childFragmentManager, null)
+                                        }
                                     }
                                 )
                                 displayBatteryInfoIfPossible()

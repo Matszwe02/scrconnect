@@ -55,6 +55,10 @@ android {
         res.directories += licenseResDir
     }
 
+    testOptions.unitTests.all {
+        it.systemProperty("robolectric.conscryptMode", "OFF")
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -260,6 +264,12 @@ dependencies {
     // We have taken a workaround to fix it.
     // See `FixPosixFilePermissionClassVisitorFactory` for more details.
     coreLibraryDesugaring(libs.android.desugarJdkLibsNio)
+
+    implementation("com.github.MuntashirAkon:libadb-android:3.0.0") {
+        exclude(group = "org.bouncycastle", module = "bcprov-jdk15to18")
+    }
+    implementation("com.github.MuntashirAkon.spake2-java:android:2.0.0")
+    implementation("org.conscrypt:conscrypt-android:2.5.3")
 
     // Compose
     implementation(libs.androidx.compose.material3)

@@ -1,6 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-  <string name="kde_connect">KDE Connect</string>
   <string name="manifest_label_share">发送到设备</string>
   <string name="foreground_notification_no_devices">未连接到任何设备</string>
   <string name="foreground_notification_devices">已连接到：%s</string>

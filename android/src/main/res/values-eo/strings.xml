@@ -1,6 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-  <string name="kde_connect">KDE Connect</string>
   <string name="manifest_label_share">Sendi al Aparato</string>
   <string name="foreground_notification_no_devices">Ne konektita al iu ajn aparato</string>
   <string name="foreground_notification_devices">Konektita al: %s</string>

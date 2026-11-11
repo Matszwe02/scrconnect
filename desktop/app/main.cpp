@@ -43,9 +43,9 @@ int main(int argc, char *argv[])
     KLocalizedString::setApplicationDomain("kdeconnect-app");
     app.setWindowIcon(QIcon::fromTheme(QStringLiteral("kdeconnect")));
     KAboutData aboutData(QStringLiteral("kdeconnect.app"),
-                         i18n("KDE Connect"),
+                         QStringLiteral("SCR Connect"),
                          QStringLiteral(KDECONNECT_VERSION_STRING),
-                         i18n("KDE Connect"),
+                         i18n("KDE Connect fork with screen sharing using scrcpy"),
                          KAboutLicense::GPL,
                          i18n("© 2015–2025 KDE Connect Team"));
     aboutData.addAuthor(i18n("Aleix Pol Gonzalez"), {}, QStringLiteral("aleixpol@kde.org"));

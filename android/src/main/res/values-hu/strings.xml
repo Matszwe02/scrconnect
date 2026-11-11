@@ -1,6 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-  <string name="kde_connect">KDE Connect</string>
   <string name="manifest_label_share">Küldés eszközre</string>
   <string name="foreground_notification_no_devices">Nincs csatlakozva egy eszközhöz sem</string>
   <string name="foreground_notification_devices">Csatlakozva ehhez: %s</string>

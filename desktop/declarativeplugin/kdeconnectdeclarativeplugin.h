@@ -189,6 +189,14 @@ class FindMyPhoneDeviceDbusInterfaceForeign
     QML_FOREIGN(FindMyPhoneDeviceDbusInterface)
 };
 
+class ScreenMirrorDeviceDbusInterfaceForeign
+{
+    Q_GADGET
+    QML_NAMED_ELEMENT(ScreenMirrorDbusInterface)
+    QML_UNCREATABLE("")
+    QML_FOREIGN(ScreenMirrorDeviceDbusInterface)
+};
+
 class SmsDbusInterfaceForeign
 {
     Q_GADGET
@@ -382,6 +390,18 @@ public:
     Q_INVOKABLE FindMyPhoneDeviceDbusInterface *create(const QString &deviceId)
     {
         return new FindMyPhoneDeviceDbusInterface(deviceId);
+    }
+};
+
+class ScreenMirrorDbusInterfaceFactory : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_SINGLETON
+public:
+    Q_INVOKABLE ScreenMirrorDeviceDbusInterface *create(const QString &deviceId)
+    {
+        return new ScreenMirrorDeviceDbusInterface(deviceId);
     }
 };
 

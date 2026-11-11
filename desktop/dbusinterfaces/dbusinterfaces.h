@@ -17,6 +17,7 @@
 #include "generated/devicefindmyphoneinterface.h"
 #include "generated/deviceinterface.h"
 #include "generated/devicenotificationsinterface.h"
+#include "generated/devicescreenmirrorinterface.h"
 #include "generated/devicesftpinterface.h"
 #include "generated/lockdeviceinterface.h"
 #include "generated/mprisremoteinterface.h"
@@ -183,6 +184,13 @@ class KDECONNECTDBUSINTERFACES_EXPORT FindMyPhoneDeviceDbusInterface : public Or
     Q_OBJECT
 public:
     explicit FindMyPhoneDeviceDbusInterface(const QString &deviceId, QObject *parent = nullptr);
+};
+
+class KDECONNECTDBUSINTERFACES_EXPORT ScreenMirrorDeviceDbusInterface : public OrgKdeKdeconnectDeviceScreenmirrorInterface
+{
+    Q_OBJECT
+public:
+    explicit ScreenMirrorDeviceDbusInterface(const QString &deviceId, QObject *parent = nullptr);
 };
 
 class KDECONNECTDBUSINTERFACES_EXPORT RemoteCommandsDbusInterface : public OrgKdeKdeconnectDeviceRemotecommandsInterface

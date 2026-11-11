@@ -1,0 +1,29 @@
+{
+    "$schema": "../kdeconnect.schema.json",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "KDE Connect contributors"
+            }
+        ],
+        "Description": "Show your phone's screen or a single phone app in a window",
+        "EnabledByDefault": true,
+        "Icon": "smartphone",
+        "License": "GPL",
+        "Name": "Screen mirroring"
+    },
+    "X-KDE-ConfigModule": "kdeconnect/kcms/kdeconnect_screenmirror_config",
+    "X-KdeConnect-OutgoingPacketType": [
+        "kdeconnect.mirror.apps.request",
+        "kdeconnect.mirror.request",
+        "kdeconnect.mirror.control",
+        "kdeconnect.mirror.stop"
+    ],
+    "X-KdeConnect-SupportedPacketType": [
+        "kdeconnect.mirror.status",
+        "kdeconnect.mirror.apps",
+        "kdeconnect.mirror.icons",
+        "kdeconnect.mirror.video",
+        "kdeconnect.mirror.audio"
+    ]
+}

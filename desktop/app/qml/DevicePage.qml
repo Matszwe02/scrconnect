@@ -218,6 +218,22 @@ Kirigami.ScrollablePage {
                 device: root.currentDevice
             },
             PluginItem {
+                readonly property QtObject mirror: ScreenMirrorDbusInterfaceFactory.create(root.currentDevice.id())
+                pluginName: "screenmirror"
+                name: i18nd("kdeconnect-app", "Mirror phone screen")
+                onClick: () => mirror.openViewer(true)
+                section: "action"
+                device: root.currentDevice
+            },
+            PluginItem {
+                readonly property QtObject mirror: ScreenMirrorDbusInterfaceFactory.create(root.currentDevice.id())
+                pluginName: "screenmirror"
+                name: i18nd("kdeconnect-app", "Mirror a phone app…")
+                onClick: () => mirror.openViewer(false)
+                section: "action"
+                device: root.currentDevice
+            },
+            PluginItem {
                 readonly property QtObject sftp: SftpDbusInterfaceFactory.create(root.currentDevice.id())
                 pluginName: "sftp"
                 name: i18n("Browse this device")

@@ -38,6 +38,7 @@ geninterface(${PROJECT_SOURCE_DIR}/plugins/connectivity-report/connectivity_repo
 geninterface(${PROJECT_SOURCE_DIR}/plugins/sftp/sftpplugin.h generated/devicesftpinterface)
 geninterface(${PROJECT_SOURCE_DIR}/plugins/notifications/notificationsplugin.h generated/devicenotificationsinterface)
 geninterface(${PROJECT_SOURCE_DIR}/plugins/findmyphone/findmyphoneplugin.h generated/devicefindmyphoneinterface)
+geninterface(${PROJECT_SOURCE_DIR}/plugins/screenmirror/screenmirrorplugin.h generated/devicescreenmirrorinterface)
 geninterface(${PROJECT_SOURCE_DIR}/plugins/notifications/notification.h generated/notificationinterface)
 geninterface(${PROJECT_SOURCE_DIR}/plugins/mprisremote/mprisremoteplugin.h generated/mprisremoteinterface)
 geninterface(${PROJECT_SOURCE_DIR}/plugins/remotecontrol/remotecontrolplugin.h generated/remotecontrolinterface)

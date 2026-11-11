@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Screen mirroring
+Comment=Show your phone's screen or a single phone app in a window
+Exec=kdeconnect-mirror
+Icon=smartphone
+Terminal=false
+Categories=Qt;KDE;Utility;
+Keywords=phone;mirror;android;scrcpy;

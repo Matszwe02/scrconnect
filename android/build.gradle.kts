@@ -53,6 +53,7 @@ android {
 
     sourceSets.getByName("main") {
         res.directories += licenseResDir
+        assets.directories += "../scrcpy"
     }
 
     testOptions.unitTests.all {

@@ -137,6 +137,14 @@ FindMyPhoneDeviceDbusInterface::FindMyPhoneDeviceDbusInterface(const QString &de
 {
 }
 
+ScreenMirrorDeviceDbusInterface::ScreenMirrorDeviceDbusInterface(const QString &deviceId, QObject *parent)
+    : OrgKdeKdeconnectDeviceScreenmirrorInterface(DaemonDbusInterface::activatedService(),
+                                                  QLatin1String("/modules/kdeconnect/devices/%1/screenmirror").arg(deviceId),
+                                                  QDBusConnection::sessionBus(),
+                                                  parent)
+{
+}
+
 RemoteCommandsDbusInterface::RemoteCommandsDbusInterface(const QString &deviceId, QObject *parent)
     : OrgKdeKdeconnectDeviceRemotecommandsInterface(DaemonDbusInterface::activatedService(),
                                                     QLatin1String("/modules/kdeconnect/devices/%1/remotecommands").arg(deviceId),

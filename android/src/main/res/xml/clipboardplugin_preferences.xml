@@ -14,8 +14,16 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
 
     <SwitchPreference
         android:defaultValue="false"
+        android:disableDependentsState="true"
         android:key="@string/clipboard_preference_key_skip_sensitive"
         android:summary="@string/clipboard_preference_summary_skip_sensitive"
         android:title="@string/clipboard_preference_title_skip_sensitive" />
+
+    <SwitchPreference
+        android:defaultValue="true"
+        android:dependency="@string/clipboard_preference_key_skip_sensitive"
+        android:key="clipboard_shell_bridge"
+        android:summary="@string/clipboard_preference_summary_shell_bridge"
+        android:title="@string/clipboard_preference_title_shell_bridge" />
 
 </androidx.preference.PreferenceScreen>

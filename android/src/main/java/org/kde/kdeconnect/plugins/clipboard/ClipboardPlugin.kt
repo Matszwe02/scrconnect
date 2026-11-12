@@ -10,6 +10,7 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.os.Build
 import android.widget.Toast
@@ -20,6 +21,8 @@ import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
 import org.kde.kdeconnect.plugins.clipboard.ClipboardListener.ClipboardObserver
+import org.kde.kdeconnect.scrcpy.SelfAdb
+import org.kde.kdeconnect.scrcpy.ShellBridge
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect_tp.R
 
@@ -100,13 +103,32 @@ class ClipboardPlugin : Plugin() {
     }
 
 
+    private val bridgeUser get() = "$SHELL_BRIDGE_USER/${device.deviceId}"
+
+    /**
+     * Only the focused app may read the clipboard, but the shell user may too: with the ADB setup a scrcpy server reports
+     * every change. It sees plain text only, so it is off while sensitive content must be skipped.
+     */
+    private fun updateShellBridge() {
+        val skipSensitive = preferences.getBoolean(context.getString(R.string.clipboard_preference_key_skip_sensitive), false)
+        val enabled = preferences.getBoolean(PREF_SHELL_BRIDGE, true)
+        if (SelfAdb.isSupported() && enabled && !skipSensitive) ShellBridge.acquire(context, bridgeUser) else ShellBridge.release(bridgeUser)
+    }
+
+    // A field: SharedPreferences only keeps weak references to its listeners
+    private val preferenceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> updateShellBridge() }
+
     override fun onCreate() {
         ClipboardListener.instance(context).registerObserver(observer)
         sendConnectPacket()
+        preferences.registerOnSharedPreferenceChangeListener(preferenceListener)
+        updateShellBridge()
     }
 
     override fun onDestroy() {
         ClipboardListener.instance(context).removeObserver(observer)
+        preferences.unregisterOnSharedPreferenceChangeListener(preferenceListener)
+        ShellBridge.release(bridgeUser)
     }
 
     override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_CLIPBOARD, PACKET_TYPE_CLIPBOARD_CONNECT)
@@ -149,6 +171,9 @@ class ClipboardPlugin : Plugin() {
     }
 
     companion object {
+        const val SHELL_BRIDGE_USER = "clipboard"
+        private const val PREF_SHELL_BRIDGE = "clipboard_shell_bridge"
+
         /**
          * Packet containing just clipboard contents, sent when a device updates its clipboard.
          *

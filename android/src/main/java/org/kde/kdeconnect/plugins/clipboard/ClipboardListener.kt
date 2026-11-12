@@ -15,6 +15,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.content.getSystemService
 import org.kde.kdeconnect.helpers.ThreadHelper
+import org.kde.kdeconnect.scrcpy.ShellBridge
 import org.kde.kdeconnect_tp.BuildConfig
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -46,10 +47,12 @@ class ClipboardListener {
 
     private constructor(ctx: Context) {
         context = ctx.applicationContext
-        Handler(Looper.getMainLooper()).post {
+        val mainHandler = Handler(Looper.getMainLooper())
+        mainHandler.post {
             cm = context.getSystemService<ClipboardManager>()!!
             cm.addPrimaryClipChangedListener { this.onClipboardChanged() }
         }
+        ShellBridge.onClipboard = { text -> mainHandler.post { onShellClipboard(text) } }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ClipboardPlugin.canSyncAutomatically(context)) {
             ThreadHelper.runOnNewThread {
                 try {
@@ -59,7 +62,7 @@ class ClipboardListener {
                     val process = Runtime.getRuntime().exec(arrayOf<String>("logcat", "-T", timeStamp, logcatFilter, "*:S"))
                     val bufferedReader = BufferedReader(InputStreamReader(process.inputStream))
                     bufferedReader.forEachLine { line ->
-                        if (line.contains(BuildConfig.APPLICATION_ID)) {
+                        if (line.contains(BuildConfig.APPLICATION_ID) && !ShellBridge.isServing(ClipboardPlugin.SHELL_BRIDGE_USER)) {
                             context.startActivity(ClipboardFloatingActivity.getIntent(context, false))
                         }
                     }
@@ -95,6 +98,16 @@ class ClipboardListener {
             }
         } catch (_: Exception) {
             //Probably clipboard was not text
+        }
+    }
+
+    private fun onShellClipboard(content: String) {
+        if (content == currentContent) return
+        updateTimestamp = System.currentTimeMillis()
+        currentContent = content
+        currentContentType = ClipboardContentType.Text
+        for (observer in observers) {
+            observer.clipboardChanged(content, ClipboardContentType.Text)
         }
     }
 

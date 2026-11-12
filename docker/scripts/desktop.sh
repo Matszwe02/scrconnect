@@ -19,7 +19,6 @@ sh docker/packaging/bundle.sh AppDir scrconnect-linux-unpacked
 # license texts and notices travel inside every desktop package
 L=scrconnect-linux-unpacked/licenses
 mkdir -p "$L"
-cp LICENSE THIRD_PARTY.md "$L/"
 cp scrcpy/LICENSE "$L/scrcpy-LICENSE-Apache-2.0.txt"
 cp -r desktop/LICENSES "$L/kdeconnect-kde-LICENSES"
 

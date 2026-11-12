@@ -3,11 +3,11 @@
 #   - SCR_Connect-<tag>-x86_64.flatpak
 #   - scrconnect-<tag>-linux-x86_64.tar.xz   (the "linux unpacked" bundle: extract and run ./scrconnect)
 #   - SCR_Connect-<tag>-android.apk
-#   - LICENSE, THIRD_PARTY.md, SHA256SUMS
+#   - SHA256SUMS
 # Trigger: a release is published. "Run workflow" (workflow_dispatch) builds the same files as downloadable run artifacts
 # without touching any release.
 #
-# The build itself is docker/build.sh, the same as a local build (see README.md): images in docker/*.Dockerfile, steps in
+# The build itself is docker/build.sh, the same as a local build: images in docker/*.Dockerfile, steps in
 # docker/scripts/, packaging files in docker/packaging/. This file only splits it into parallel jobs and publishes.
 #
 # Android signing (optional): add the repository secrets ANDROID_KEYSTORE_BASE64 (base64 of the .jks), ANDROID_KEYSTORE_PASSWORD,
@@ -156,7 +156,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}
         run: |
-          cp LICENSE THIRD_PARTY.md dist/
           cd dist
           sha256sum -- * > SHA256SUMS
           ls -lh

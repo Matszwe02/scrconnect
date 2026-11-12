@@ -63,6 +63,5 @@ for t in $targets; do
   esac
 done
 
-cp tools/reload-plugins.sh dist/ # installs the build next to it and reloads both sides (see dist/README.txt)
 (cd dist && rm -f SHA256SUMS && sha256sum -- *.apk *.AppImage *.flatpak *.tar.xz > SHA256SUMS 2>/dev/null || true)
 ls -lh dist

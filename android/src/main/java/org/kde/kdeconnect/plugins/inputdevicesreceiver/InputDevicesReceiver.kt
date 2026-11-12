@@ -6,12 +6,16 @@
 package org.kde.kdeconnect.plugins.inputdevicesreceiver
 
 import android.hardware.display.DisplayManager
+import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Display
+import org.kde.kdeconnect.KdeConnectAccessibilityService
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
 import org.kde.kdeconnect.plugins.mousereceiver.MouseReceiverPlugin
+import org.kde.kdeconnect.plugins.screenmirror.ScreenMirrorPlugin
+import org.kde.kdeconnect.scrcpy.SelfAdb
 import org.kde.kdeconnect_tp.R
 
 @LoadablePlugin
@@ -31,6 +35,24 @@ class InputDevicesReceiverPlugin : Plugin() {
         var y = 0
     }
 
+    /** Set while input is injected through the shell; the other input plugins then stay out. */
+    @Volatile
+    var shellInput: ShellInput? = null
+        private set
+
+    /** The computer runs this fork: it ignores a release while it does not hold the pointer. */
+    private var moddedComputer = false
+    private var lastAlong = 0.5
+    private var lastReleaseAt = 0L
+
+    /**
+     * Mouse input belongs to Phone Leap while the phone has the pointer, and for a moment after giving it back (input sent
+     * before the computer got the release is still arriving). The mouse receiver stays out then.
+     */
+    val leapInput: Boolean
+        get() = shellInput != null ||
+            (moddedComputer && Cursor.enterEdge == NONE_EDGE && SystemClock.elapsedRealtime() - lastReleaseAt <= RECLAIM_AFTER_MS)
+
     private val metrics = DisplayMetrics()
     private lateinit var displayManager: DisplayManager
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -49,6 +71,57 @@ class InputDevicesReceiverPlugin : Plugin() {
 
     override fun onDestroy() {
         displayManager.unregisterDisplayListener(displayListener)
+        endShellInput()
+    }
+
+    private fun endShellInput() {
+        shellInput?.end()
+        shellInput = null
+    }
+
+    /** A computer running this fork marks its requests "modded": with the ADB setup done, input goes through the shell. */
+    private fun startShellInput(np: NetworkPacket): Boolean {
+        if (!np.getBoolean("modded", false)) return false
+        if (!SelfAdb.isSetUp(context)) {
+            if (device.getPlugin<MouseReceiverPlugin>() != null) return false
+            release(0, 0, "needs_setup")
+            return true
+        }
+        endShellInput()
+        lastAlong = np.getDouble("along", 0.5)
+        shellInput = ShellInput(context, np.getInt("exitEdge"), lastAlong.toFloat(), "input/${device.deviceId}")
+        // From now on the computer sends exact events (buttons, key codes)
+        val reply = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
+        reply["shellInput"] = true
+        device.sendPacket(reply)
+        return true
+    }
+
+    private fun handleShellInput(input: ShellInput, np: NetworkPacket) {
+        when {
+            np.getBoolean("scroll", false) -> input.scroll(
+                np.getDouble("wheelX", np.getDouble("dx", 0.0) * 8).toFloat(),
+                np.getDouble("wheelY", -np.getDouble("dy", 0.0) * 8).toFloat(),
+            )
+            np.has("button") -> input.button(np.getInt("button"), np.getBoolean("pressed", true))
+            np.has("evdev") -> input.evdevKey(np.getInt("evdev"), np.getBoolean("pressed", true))
+            np.has("dx") -> input.move(np.getDouble("dx").toFloat(), np.getDouble("dy", 0.0).toFloat())?.let { along ->
+                // Pushed back out through the entry edge: return the pointer at once
+                lastAlong = along.toDouble()
+                releaseAlong()
+                // Finding the app takes shell commands, which must not hold up this thread: it handles every packet
+                if (input.dragging) {
+                    device.getPlugin<ScreenMirrorPlugin>()?.offerHandoff { packageName, taskId, label ->
+                        val packet = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
+                        packet["handoffPackage"] = packageName
+                        packet["handoffTaskId"] = taskId
+                        packet["handoffLabel"] = label
+                        device.sendPacket(packet)
+                    }
+                }
+                endShellInput()
+            }
+        }
     }
 
     private fun resolveDisplaySize() {
@@ -57,17 +130,47 @@ class InputDevicesReceiverPlugin : Plugin() {
             .getRealMetrics(metrics)
     }
 
-    private fun release(dx: Int, dy: Int) {
+    private fun release(dx: Int, dy: Int, reason: String? = null) {
         val np = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
+        reason?.let { np["reason"] = it }
 
         np["releaseDeltax"] = dx
         np["releaseDeltay"] = dy
 
+        lastReleaseAt = SystemClock.elapsedRealtime()
         device.sendPacket(np)
         Cursor.enterEdge = NONE_EDGE
+        KdeConnectAccessibilityService.instance?.hideCursorNow()
+    }
+
+    /** Gives the pointer back at [lastAlong] along the computer's edge, independent of the screen sizes. */
+    private fun releaseAlong() {
+        val np = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
+        np["releaseAlong"] = lastAlong
+        np["releaseDeltax"] = 0
+        np["releaseDeltay"] = 0
+        lastReleaseAt = SystemClock.elapsedRealtime()
+        device.sendPacket(np)
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
+        if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_LEAVE) {
+            endShellInput() // the computer took the pointer back
+            return true
+        }
+        if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST) moddedComputer = np.getBoolean("modded", false)
+        if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST && startShellInput(np)) return true
+        shellInput?.let {
+            if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST) handleShellInput(it, np)
+            return true
+        }
+        if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST && moddedComputer && Cursor.enterEdge == NONE_EDGE) {
+            // The computer may still hold the pointer captured (a lost release): hand it back again, but not right after a
+            // release, while earlier input is still on its way
+            if (SystemClock.elapsedRealtime() - lastReleaseAt > RECLAIM_AFTER_MS) releaseAlong()
+            return true
+        }
+
         val mouseReceiverPlugin = device.getPlugin<MouseReceiverPlugin>()
 
         // If we do not have the permission or the MouseReceiverPlugin is disabled (either from the beginning or the user disabled it while the cursor was in our possession),
@@ -76,7 +179,7 @@ class InputDevicesReceiverPlugin : Plugin() {
             Cursor.x = np.getInt("deltax", Cursor.x)
             Cursor.y = np.getInt("deltay", Cursor.y)
 
-            release(Cursor.x, Cursor.y)
+            release(Cursor.x, Cursor.y, "needs_setup")
             return false
         }
 
@@ -117,7 +220,8 @@ class InputDevicesReceiverPlugin : Plugin() {
         return true
     }
 
-    override val supportedPacketTypes: Array<String> = arrayOf(PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_SHAREINPUTDEVICES_REQUEST)
+    override val supportedPacketTypes: Array<String> =
+        arrayOf(PACKET_TYPE_MOUSEPAD_REQUEST, PACKET_TYPE_SHAREINPUTDEVICES_REQUEST, PACKET_TYPE_SHAREINPUTDEVICES_LEAVE)
     override val outgoingPacketTypes: Array<String> = arrayOf(PACKET_TYPE_SHAREINPUTDEVICES)
 
     companion object {
@@ -127,9 +231,11 @@ class InputDevicesReceiverPlugin : Plugin() {
         private const val RIGHT_EDGE = 0x00002
         private const val BOTTOM_EDGE = 0x00001
         private const val NONE_EDGE = 0
+        private const val RECLAIM_AFTER_MS = 1000L
 
         private const val PACKET_TYPE_MOUSEPAD_REQUEST = "kdeconnect.mousepad.request"
         private const val PACKET_TYPE_SHAREINPUTDEVICES = "kdeconnect.shareinputdevices"
         private const val PACKET_TYPE_SHAREINPUTDEVICES_REQUEST = "kdeconnect.shareinputdevices.request"
+        private const val PACKET_TYPE_SHAREINPUTDEVICES_LEAVE = "kdeconnect.shareinputdevices.leave"
     }
 }

@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">接收來自其他裝置的通知並將其顯示在 Android 上</string>
   <string name="pref_plugin_sharereceiver">分享和接收</string>
   <string name="pref_plugin_sharereceiver_desc">在裝置之間分享檔案和網址 (URL)</string>
-  <string name="pref_plugin_inputdevicesreceiver">分享輸入裝置</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">與遠端裝置分享滑鼠與鍵盤</string>
   <string name="device_list_empty">沒有裝置</string>
   <string name="ok">確認</string>
   <string name="sad_ok">好吧 :(</string>

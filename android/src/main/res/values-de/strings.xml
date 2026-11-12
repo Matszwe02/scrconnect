@@ -37,8 +37,6 @@
   <string name="pref_plugin_receive_notifications_desc">Benachrichtigungen des anderen Geräts empfangen und in Android anzeigen</string>
   <string name="pref_plugin_sharereceiver">Teilen und Empfangen</string>
   <string name="pref_plugin_sharereceiver_desc">Dateien und Webadressen zwischen Geräten teilen</string>
-  <string name="pref_plugin_inputdevicesreceiver">Eingabegeräte teilen</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Maus und Tastatur mit dem fernen Gerät teilen</string>
   <string name="device_list_empty">Keine Geräte</string>
   <string name="ok">OK</string>
   <string name="sad_ok">OK :(</string>

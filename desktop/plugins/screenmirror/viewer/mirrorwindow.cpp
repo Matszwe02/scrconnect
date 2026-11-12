@@ -10,6 +10,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCursor>
 #include <QDBusConnection>
 #include <QDBusReply>
 #include <QKeyEvent>
@@ -17,12 +18,14 @@
 #include <QMimeData>
 #include <QPainter>
 #include <QScreen>
+#include <QWindow>
 
 using namespace Qt::StringLiterals;
 
 namespace
 {
 const QString kService = u"org.kde.kdeconnect"_s;
+constexpr int kSnapGuard = 150; // pixels from the phone's edge within which a dragged window cannot tile
 const QString kInterface = u"org.kde.kdeconnect.device.screenmirror"_s;
 
 // Qt key -> Android keycode, for the keys that do not produce text
@@ -86,6 +89,13 @@ MirrorWindow::MirrorWindow(const MirrorOptions &options)
         m_hint.clear();
         update();
     });
+    m_dragTimer.setSingleShot(true);
+    m_dragTimer.setInterval(500);
+    connect(&m_dragTimer, &QTimer::timeout, this, [this] {
+        m_dragArmed = false;
+        lockSize(false);
+    });
+    QDBusConnection::sessionBus().registerObject(u"/MirrorWindow"_s, this, QDBusConnection::ExportScriptableSlots);
 
     const QString path = m_plugin.path();
     QDBusConnection::sessionBus().connect(kService, path, kInterface, u"statusChanged"_s, this, SLOT(onStatus(QString, QString, QString)));
@@ -103,20 +113,36 @@ void MirrorWindow::start()
     m_decoder.close();
     m_image = QImage();
     m_frameSize = {};
+    const QDBusReply<int> edge = m_plugin.call(u"phoneEdge"_s);
+    m_phoneEdge = edge.isValid() ? edge.value() : 0;
+    if (appMode() && QGuiApplication::platformName().startsWith("wayland"_L1) && !m_kwin) {
+        m_kwin = std::make_unique<KWinScript>();
+        if (KWinScript::isAvailable() && m_kwin->load(m_followPointer, m_phoneEdge, u"/MirrorWindow"_s, u"org.kde.kdeconnect.mirror.window"_s, u"returnToPhone"_s)) {
+            m_followPointer = false;
+        } else {
+            m_hint = i18n("On this desktop, Alt+P sends the app back to the phone (or Ctrl+right click, Move to the phone).");
+            m_hintTimer.start(8000);
+        }
+    }
     const QDBusReply<bool> screenOff = m_plugin.call(u"screenOffDefault"_s, appMode() ? u"app"_s : u"screen"_s);
     m_screenOff = screenOff.isValid() && screenOff.value();
-    m_sentDisplaySize = appMode() ? displaySize() : QSize();
-    const QDBusReply<QString> id = m_plugin.call(u"startSession"_s,
-                                                appMode() ? u"app"_s : u"screen"_s,
-                                                m_options.packageName,
-                                                QVariantMap{{u"width"_s, m_sentDisplaySize.width()},
-                                                            {u"height"_s, m_sentDisplaySize.height()},
-                                                            {u"codec"_s, VideoDecoder::preferredCodec()}});
-    if (!id.isValid() || id.value().isEmpty()) {
-        setMessage(i18n("Could not start mirroring. Is the phone connected, with screen mirroring enabled?"));
-        return;
+    if (!m_options.attachSession.isEmpty()) {
+        m_sessionId = std::exchange(m_options.attachSession, {});
+        m_sentDisplaySize = {};
+    } else {
+        m_sentDisplaySize = appMode() ? displaySize() : QSize();
+        const QDBusReply<QString> id = m_plugin.call(u"startSession"_s,
+                                                    appMode() ? u"app"_s : u"screen"_s,
+                                                    m_options.packageName,
+                                                    QVariantMap{{u"width"_s, m_sentDisplaySize.width()},
+                                                                {u"height"_s, m_sentDisplaySize.height()},
+                                                                {u"codec"_s, VideoDecoder::preferredCodec()}});
+        if (!id.isValid() || id.value().isEmpty()) {
+            setMessage(i18n("Could not start mirroring. Is the phone connected, with screen mirroring enabled?"));
+            return;
+        }
+        m_sessionId = id.value();
     }
-    m_sessionId = id.value();
     setMessage(i18n("Starting on your phone…"));
     m_socket.connectToServer(u"kdeconnect-mirror-"_s + m_sessionId);
 }
@@ -150,6 +176,70 @@ void MirrorWindow::onStatus(const QString &sessionId, const QString &state, cons
     } else if (state == "error"_L1) {
         m_sessionId.clear();
         setMessage(i18n("The phone reported an error:\n%1", message));
+    }
+}
+
+void MirrorWindow::returnToPhone()
+{
+    if (!m_sessionId.isEmpty()) {
+        m_plugin.call(QDBus::NoBlock, u"returnToPhone"_s, std::exchange(m_sessionId, {}));
+    }
+    close();
+}
+
+/**
+ * An app window goes back to the phone when the pointer dragging it reaches the phone's screen edge, after having been
+ * away from it during this drag. X11 only: on Plasma Wayland the KWin script does it.
+ */
+void MirrorWindow::moveEvent(QMoveEvent *event)
+{
+    QWidget::moveEvent(event);
+    if (!appMode() || !m_phoneEdge || !isVisible() || QGuiApplication::platformName().startsWith("wayland"_L1)) {
+        return;
+    }
+    m_dragTimer.start();
+    const QPoint pointer = QCursor::pos();
+    const QScreen *screen = QGuiApplication::screenAt(pointer);
+    if (!screen) {
+        return;
+    }
+    const QRect r = screen->geometry();
+    const int distance = m_phoneEdge == Qt::LeftEdge ? pointer.x() - r.left()
+        : m_phoneEdge == Qt::RightEdge               ? r.right() - pointer.x()
+        : m_phoneEdge == Qt::TopEdge                 ? pointer.y() - r.top()
+                                                     : r.bottom() - pointer.y();
+    const QPoint outside = m_phoneEdge == Qt::LeftEdge ? QPoint(r.left() - 1, pointer.y())
+        : m_phoneEdge == Qt::RightEdge                 ? QPoint(r.right() + 1, pointer.y())
+        : m_phoneEdge == Qt::TopEdge                   ? QPoint(pointer.x(), r.top() - 1)
+                                                       : QPoint(pointer.x(), r.bottom() + 1);
+    if (QGuiApplication::screenAt(outside)) {
+        lockSize(false);
+        return;
+    }
+    // Window managers (Cinnamon) offer to tile a window dragged to the edge, and that preview would stay on screen after the
+    // window went to the phone. Only resizable windows tile.
+    lockSize(distance <= kSnapGuard);
+    if (distance > 100) {
+        m_dragArmed = true;
+    } else if (m_dragArmed && distance <= 1) {
+        returnToPhone();
+    }
+}
+
+void MirrorWindow::lockSize(bool lock)
+{
+    if (lock == m_sizeLocked) {
+        return;
+    }
+    m_sizeLocked = lock;
+    if (lock) {
+        m_unlockedMinimum = minimumSize();
+        m_unlockedMaximum = maximumSize();
+        setMinimumSize(size());
+        setMaximumSize(size());
+    } else {
+        setMinimumSize(m_unlockedMinimum);
+        setMaximumSize(m_unlockedMaximum);
     }
 }
 
@@ -222,6 +312,16 @@ QPoint MirrorWindow::framePosition(QPointF position) const
 
 void MirrorWindow::paintEvent(QPaintEvent *)
 {
+    if (std::exchange(m_followPointer, false)) {
+        // Mapped now. Wayland refuses the move unless the window was pressed: nothing happens there.
+        QMetaObject::invokeMethod(this, [this] {
+            if (!QGuiApplication::platformName().startsWith("wayland"_L1)) {
+                const QPoint pointer = QCursor::pos();
+                move(pointer.x() - width() / 2, pointer.y() - 12);
+            }
+            windowHandle()->startSystemMove();
+        }, Qt::QueuedConnection);
+    }
     QPainter p(this);
     p.fillRect(rect(), Qt::black);
     if (!m_image.isNull()) {
@@ -352,6 +452,8 @@ void MirrorWindow::keyPressEvent(QKeyEvent *event)
         send(Scrcpy::expandNotificationPanel());
     } else if (mods == (Qt::AltModifier | Qt::ShiftModifier) && key == Qt::Key_N) {
         send(Scrcpy::collapsePanels());
+    } else if (mods == Qt::AltModifier && key == Qt::Key_P && appMode()) {
+        returnToPhone();
     } else if (mods == Qt::AltModifier && key == Qt::Key_R) {
         send(Scrcpy::resetVideo());
     } else if (key == Qt::Key_O && (mods == Qt::ControlModifier || mods == (Qt::ControlModifier | Qt::ShiftModifier))) {
@@ -386,6 +488,9 @@ void MirrorWindow::contextMenuEvent(QContextMenuEvent *event)
     off->setCheckable(true);
     off->setChecked(m_screenOff);
     connect(off, &QAction::toggled, this, &MirrorWindow::setScreenOff);
+    if (appMode()) {
+        menu.addAction(QIcon::fromTheme(u"smartphone"_s), i18n("Move to the phone"), QKeySequence(Qt::ALT | Qt::Key_P), this, &MirrorWindow::returnToPhone);
+    }
     menu.exec(event->globalPos());
 }
 

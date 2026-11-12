@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">다른 장치의 알림을 받아서 안드로이드 알림에 표시</string>
   <string name="pref_plugin_sharereceiver">공유하고 받기</string>
   <string name="pref_plugin_sharereceiver_desc">장치끼리 파일과 URL 공유</string>
-  <string name="pref_plugin_inputdevicesreceiver">입력 장치 공유</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">원격 장치와 마우스와 키보드 공유</string>
   <string name="device_list_empty">장치 없음</string>
   <string name="ok">확인</string>
   <string name="sad_ok">확인 :(</string>

@@ -89,7 +89,7 @@ private:
 };
 
 InputCaptureSession::InputCaptureSession(QObject *parent)
-    : QObject(parent)
+    : InputCaptureBackend(parent)
     , m_xkb(new Xkb)
     , m_inputCapturePortal(new OrgFreedesktopPortalInputCaptureInterface(portalName(), portalPath(), QDBusConnection::sessionBus(), this))
 
@@ -104,11 +104,12 @@ InputCaptureSession::InputCaptureSession(QObject *parent)
     connect(request, &OrgFreedesktopPortalRequestInterface::Response, request, &QObject::deleteLater);
     connect(request, &OrgFreedesktopPortalRequestInterface::Response, this, &InputCaptureSession::sessionCreated);
     auto call = m_inputCapturePortal->CreateSession(QString(), {{u"handle_token"_s, token}, {u"session_handle_token"_s, token}, {u"capabilities"_s, 3u}});
-    connect(new QDBusPendingCallWatcher(call, this), &QDBusPendingCallWatcher::finished, request, [request](QDBusPendingCallWatcher *watcher) {
+    connect(new QDBusPendingCallWatcher(call, this), &QDBusPendingCallWatcher::finished, request, [this, request](QDBusPendingCallWatcher *watcher) {
         watcher->deleteLater();
         if (watcher->isError()) {
             qCWarning(KDECONNECT_PLUGIN_SHAREINPUTDEVICES) << "Error creating input capture session" << watcher->error();
             request->deleteLater();
+            Q_EMIT unavailable(); // no InputCapture portal on this desktop
         }
     });
 }
@@ -127,6 +128,9 @@ void InputCaptureSession::sessionCreated(uint response, const QVariantMap &resul
 {
     if (response != 0) {
         qCWarning(KDECONNECT_PLUGIN_SHAREINPUTDEVICES) << "Couldn't create input capture session";
+        if (response == 2) { // 1 is the user saying no
+            Q_EMIT unavailable();
+        }
         return;
     }
     m_session = std::make_unique<OrgFreedesktopPortalSessionInterface>(portalName(),
@@ -281,6 +285,7 @@ void InputCaptureSession::release(const QPointF &position)
 void InputCaptureSession::sessionClosed()
 {
     qCCritical(KDECONNECT_PLUGIN_SHAREINPUTDEVICES()) << "input capture session was closed";
+    m_active = false;
     m_session.reset();
     m_eiNotifier.reset();
 }
@@ -291,6 +296,7 @@ void InputCaptureSession::activated(const QDBusObjectPath &sessionHandle, const 
         return;
     }
     m_currentActivationId = options[u"activation_id"_s].toUInt();
+    m_active = true;
     // uint barrier_id = options[u"barrier_id"].toUInt();
     auto cursorPosition = qdbus_cast<QPointF>(options[u"cursor_position"_s].value<QDBusArgument>());
     Q_EMIT started(m_barrier, cursorPosition - m_barrier.p1());
@@ -305,8 +311,9 @@ void InputCaptureSession::deactivated(const QDBusObjectPath &sessionHandle, cons
     if (!m_session || sessionHandle.path() != m_session->path()) {
         return;
     }
-    auto deactivatedId = options[u"activation_id"_s].toUInt();
-    Q_UNUSED(deactivatedId)
+    if (options[u"activation_id"_s].toUInt() == m_currentActivationId) {
+        m_active = false;
+    }
 }
 
 void InputCaptureSession::disabled(const QDBusObjectPath &sessionHandle, const QVariantMap &options)
@@ -314,8 +321,7 @@ void InputCaptureSession::disabled(const QDBusObjectPath &sessionHandle, const Q
     if (!m_session || sessionHandle.path() != m_session->path()) {
         return;
     }
-    auto disabledId = options[u"activation_id"_s].toUInt();
-    Q_UNUSED(disabledId)
+    m_active = false;
 }
 
 void InputCaptureSession::zonesChanged(const QDBusObjectPath &sessionHandle, const QVariantMap &options)
@@ -428,6 +434,7 @@ void InputCaptureSession::handleEiEvent(ei_event *event)
     case EI_EVENT_KEYBOARD_KEY: {
         auto xkbKey = ei_event_keyboard_get_key(event) + 8;
         m_xkb->updateKey(xkbKey, ei_event_keyboard_get_key_is_press(event));
+        Q_EMIT keyEvent(ei_event_keyboard_get_key(event), ei_event_keyboard_get_key_is_press(event));
         // mousepad plugin does press/release in one, trigger on press like remotekeyboard
         if (ei_event_keyboard_get_key_is_press(event)) {
             xkb_keysym_t sym = xkb_state_key_get_one_sym(m_xkb->currentState(), xkbKey);

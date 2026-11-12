@@ -26,6 +26,7 @@ Kirigami.ScrollablePage {
         enabled: false // Nothing to be applied when we enter the page.
         onTriggered: {
             config.set("edge", edgeComboBox.valueAt(edgeComboBox.currentIndex))
+            config.set("pointerSpeed", speedSpinBox.value)
             enabled = false
         }
     }
@@ -36,7 +37,10 @@ Kirigami.ScrollablePage {
             deviceId: device
             pluginName: pluginId
 
-            onConfigChanged: edgeComboBox.currentIndex = edgeComboBox.indexOfValue(getInt("edge", Qt.LeftEdge))
+            onConfigChanged: {
+                edgeComboBox.currentIndex = edgeComboBox.indexOfValue(getInt("edge", Qt.LeftEdge))
+                speedSpinBox.value = getInt("pointerSpeed", 100)
+            }
         }
 
         RowLayout {
@@ -88,6 +92,20 @@ Kirigami.ScrollablePage {
                     }
                 }
             }
+        }
+
+        QQC2.SpinBox {
+            id: speedSpinBox
+            Kirigami.FormData.label: i18nc("@label:spinbox how fast the pointer moves on the other device", "Pointer speed on the device:")
+            from: 25
+            to: 400
+            stepSize: 25
+            value: config.getInt("pointerSpeed", 100)
+            textFromValue: (value) => i18nc("@item:inrange percentage", "%1%", value)
+            valueFromText: (text) => parseInt(text)
+            onValueModified: applyButton.enabled = true
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.text: i18nc("@info:tooltip", "Phones have a much higher pixel density than computer screens: raise this if the pointer feels slow there.")
         }
     }
 }

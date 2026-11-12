@@ -5,6 +5,9 @@
  */
 package org.kde.kdeconnect.plugins.screenmirror
 
+import android.app.Activity
+import android.app.ActivityOptions
+import android.app.Notification
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -24,19 +27,25 @@ import io.github.muntashirakon.adb.AdbStream
 import java.io.ByteArrayOutputStream
 import java.io.FilterInputStream
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.plugins.notifications.NotificationReceiver
+import org.kde.kdeconnect.plugins.notifications.NotificationsPlugin
 import org.kde.kdeconnect.scrcpy.AppAudioCapture
 import org.kde.kdeconnect.scrcpy.ControlSplitter
 import org.kde.kdeconnect.scrcpy.ScrcpyControl
 import org.kde.kdeconnect.scrcpy.ScrcpyPlugin
 import org.kde.kdeconnect.scrcpy.ScrcpySession
 import org.kde.kdeconnect.scrcpy.SelfAdb
+import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect_tp.R
+import kotlin.concurrent.thread
 
 /**
  * Shows the phone's screen, or single apps on virtual displays, on the computer. The phone relays the scrcpy sockets as
@@ -44,9 +53,12 @@ import org.kde.kdeconnect_tp.R
  *
  *   computer -> phone
  *     mirror.apps.request {icons?: [package]}
- *     mirror.request  {sessionId, mode: "screen"|"app", package?, width?, height?, codec?, screenOff?, lockOnClose?, audio?}
+ *     mirror.request  {sessionId, mode: "screen"|"app", package?, width?, height?, codec?, screenOff?, lockOnClose?, audio?,
+ *                      notificationId? (Open on PC), handoff?, handoffTaskId?}
  *     mirror.control  {sessionId, data}  base64 scrcpy control messages
  *     mirror.stop     {sessionId}
+ *     mirror.open     {sessionId, notificationId, package}  open a notification's target in an existing window
+ *     mirror.handoff.return {sessionId}  the window's app goes back to the phone
  *   phone -> computer
  *     mirror.status   {sessionId, state: "needs_setup"|"stopped"|"error"|"screen_off"|"screen_on", message?}
  *     mirror.apps     {apps: [{label, package, system}]}
@@ -58,12 +70,24 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
     override val displayName: String get() = context.getString(R.string.pref_plugin_screenmirror)
     override val description: String get() = context.getString(R.string.pref_plugin_screenmirror_desc)
     override val isCompatible: Boolean get() = super.isCompatible && SelfAdb.isSupported()
-    override val supportedPacketTypes = arrayOf(APPS_REQUEST, REQUEST, CONTROL, STOP)
+    override val supportedPacketTypes = arrayOf(APPS_REQUEST, REQUEST, CONTROL, STOP, OPEN, HANDOFF_RETURN)
     override val outgoingPacketTypes = arrayOf(STATUS, APPS, ICONS, VIDEO, AUDIO)
+    override val hasSettings = true
+    override val settingsScope = SettingsScope.PER_DEVICE
     override val idKey = "sessionId"
     override val statusType = STATUS
 
-    private class Live(val session: ScrcpySession, val app: Boolean) {
+    override fun getSettingsFragment(activity: Activity): PluginSettingsFragment =
+        PluginSettingsFragment.newInstance(pluginKey, device.deviceId, R.xml.screenmirrorplugin_preferences)
+
+    fun openOnPcEnabled(): Boolean = preferences.getBoolean(PREF_OPEN_ON_PC, true) && SelfAdb.isSetUp(context)
+
+    /** [handoff]: the task moved from the phone into this window, to bring it back. */
+    private class Live(val session: ScrcpySession, val packageName: String?, handoff: Handoff.Task?, val app: Boolean) {
+        /** Null once the task is gone (an app that closes itself when moved to another display). */
+        @Volatile
+        var handoff: Handoff.Task? = handoff
+
         var appAudio: AdbStream? = null
 
         @Volatile
@@ -76,6 +100,9 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
             runCatching { appAudio?.close() }
         }
     }
+
+    @Volatile
+    private var lastForeground: Handoff.Task? = null
 
     private val sessions = ConcurrentHashMap<String, Live>()
 
@@ -177,6 +204,8 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
             REQUEST -> executor.execute { start(id, np) }
             CONTROL -> runCatching { Base64.decode(np.getString("data", ""), Base64.DEFAULT) }.getOrNull()?.let { control(id, it) }
             STOP -> stop(id)
+            OPEN -> executor.execute { sessions[id]?.let { openNotification(id, it, np.getString("notificationId", ""), np.getStringOrNull("package")) } }
+            HANDOFF_RETURN -> executor.execute { handoffReturn(id) }
         }
         return true
     }
@@ -232,7 +261,9 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
         }
         val app = np.getString("mode", "screen") == "app"
         val pkg = np.getStringOrNull("package")?.takeIf(ScrcpySession::isValidPackageName)
-        if (app && pkg == null) {
+        val notificationId = np.getStringOrNull("notificationId")?.takeIf { it.isNotEmpty() }
+        val handoff = np.getBoolean("handoff", false)
+        if (app && pkg == null && notificationId == null) {
             status(id, STATE_ERROR, "Invalid app")
             return
         }
@@ -264,7 +295,8 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
             status(id, STATE_ERROR, e.message)
             return
         }
-        val live = Live(session, app)
+        val handoffTask = lastForeground?.takeIf { handoff && it.id == np.getInt("handoffTaskId", -1) }
+        val live = Live(session, pkg, handoffTask, app)
         sessions[id] = live
         updateAwake()
         // The server turns the screen on as it starts: turn it off once the video flows
@@ -298,7 +330,82 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
             }
         }
         if (app && OWN_DISPLAY_POWER) executor.execute { session.awaitDisplayId()?.takeIf(::displayOff)?.let { wake(id, live) } }
-        if (app) send(id, ScrcpyControl.startApp(pkg!!))
+        when {
+            // Move the task with its state; where that is not possible, start the app there
+            handoff -> if (handoffTask != null && Handoff.move(context, handoffTask, session.awaitDisplayId() ?: -1)) {
+                checkHandoffSurvived(id, live, handoffTask)
+            } else {
+                pkg?.let { send(id, ScrcpyControl.startApp(it)) }
+            }
+            notificationId != null -> openNotification(id, live, notificationId, pkg)
+            app -> send(id, ScrcpyControl.startApp(pkg!!))
+        }
+    }
+
+    /** Some apps close themselves when moved to another display: start them afresh in the window then. */
+    private fun checkHandoffSurvived(id: String, live: Live, task: Handoff.Task) = thread(isDaemon = true, name = "handoff-check") {
+        Thread.sleep(HANDOFF_CHECK_MS)
+        if (sessions[id] !== live) return@thread
+        val exists = Handoff.exists(context, task.id)
+        Log.i(TAG, "Hand-off of ${task.packageName} (task ${task.id}) to app window $id: task ${if (exists) "kept" else "gone, starting the app there"}")
+        if (exists) return@thread
+        live.handoff = null
+        send(id, ScrcpyControl.startApp(task.packageName))
+    }
+
+    /** Fires the notification's own intent on the session's display, so that the exact chat or mail opens. */
+    private fun openNotification(id: String, live: Live, notificationId: String, packageName: String?) {
+        val display = live.session.awaitDisplayId() ?: return
+        val pkg = packageName?.takeIf(ScrcpySession::isValidPackageName) ?: live.packageName
+        // A running app would only come to the front on the phone's screen
+        pkg?.let { Handoff.find(context, it) }?.let { Handoff.move(context, it, display) }
+        val opened = CountDownLatch(1)
+        var ok = false
+        NotificationReceiver.RunCommand(context) { service ->
+            runCatching {
+                val sbn = service.activeNotifications.firstOrNull { NotificationsPlugin.notificationKey(it) == notificationId }
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(display)
+                // Allowed from the background: the setup granted SYSTEM_ALERT_WINDOW
+                if (Build.VERSION.SDK_INT >= 36) {
+                    options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOW_ALWAYS)
+                } else if (Build.VERSION.SDK_INT >= 34) {
+                    @Suppress("DEPRECATION")
+                    options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+                }
+                sbn?.notification?.contentIntent?.send(context, 0, null, null, null, null, options.toBundle())?.also {
+                    if (sbn.notification.flags and Notification.FLAG_AUTO_CANCEL != 0) service.cancelNotification(sbn.key)
+                    ok = true
+                }
+            }
+            opened.countDown()
+        }
+        opened.await(3, TimeUnit.SECONDS)
+        if (!ok && pkg != null) send(id, ScrcpyControl.startApp(pkg))
+    }
+
+    /** Phone Leap's pointer left the phone with the button held: passes the app in front to [offer] (package, task, label). */
+    fun offerHandoff(offer: (String, Int, String) -> Unit) = runCatching {
+        executor.execute {
+            val task = Handoff.foreground(context) ?: return@execute
+            lastForeground = task
+            val label = runCatching {
+                context.packageManager.run { getApplicationLabel(getApplicationInfo(task.packageName, 0)).toString() }
+            }.getOrDefault(task.packageName)
+            offer(task.packageName, task.id, label)
+        }
+    }
+
+    private fun handoffReturn(id: String) {
+        val live = sessions[id] ?: return
+        val task = live.handoff ?: live.session.displayId?.let { Handoff.top(context, it) }
+        val moved = task != null && Handoff.move(context, task, 0)
+        stop(id)
+        status(id, STATE_STOPPED)
+        // The display hands its apps to the phone's screen as the server exits
+        live.session.awaitExit()
+        wakePhone()
+        val pkg = task?.packageName ?: live.packageName
+        if (!moved && pkg != null) Handoff.bringToFront(context, pkg, task?.component)
     }
 
     /** KEYCODE_WAKEUP, on the phone's own screen. */
@@ -316,6 +423,10 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
         private const val REQUEST = "kdeconnect.mirror.request"
         private const val CONTROL = "kdeconnect.mirror.control"
         private const val STOP = "kdeconnect.mirror.stop"
+        private const val OPEN = "kdeconnect.mirror.open"
+        private const val HANDOFF_RETURN = "kdeconnect.mirror.handoff.return"
+        private const val HANDOFF_CHECK_MS = 2000L
+        private const val PREF_OPEN_ON_PC = "mirror_open_on_pc"
         private const val STATUS = "kdeconnect.mirror.status"
         private const val APPS = "kdeconnect.mirror.apps"
         private const val ICONS = "kdeconnect.mirror.icons"

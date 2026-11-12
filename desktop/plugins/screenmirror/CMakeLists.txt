@@ -5,7 +5,7 @@ install(FILES kdeconnect_screenmirror_config.qml DESTINATION ${KDE_INSTALL_DATAD
 find_package(Qt6 ${QT_MIN_VERSION} QUIET COMPONENTS Widgets)
 pkg_check_modules(FFMPEG QUIET IMPORTED_TARGET libavcodec libavutil libswscale)
 if (TARGET Qt::Widgets AND TARGET PkgConfig::FFMPEG)
-    add_executable(kdeconnect-mirror viewer/main.cpp viewer/mirrorwindow.cpp viewer/applauncherdialog.cpp scrcpyprotocol.cpp videodecoder.cpp)
+    add_executable(kdeconnect-mirror viewer/main.cpp viewer/mirrorwindow.cpp viewer/applauncherdialog.cpp viewer/kwinscript.cpp scrcpyprotocol.cpp videodecoder.cpp)
     target_link_libraries(kdeconnect-mirror Qt::Widgets Qt::DBus Qt::Network KF6::I18n PkgConfig::FFMPEG)
     install(TARGETS kdeconnect-mirror ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
     install(FILES viewer/org.kde.kdeconnect.mirror.desktop DESTINATION ${KDE_INSTALL_APPDIR})

@@ -12,7 +12,7 @@
 
 #include <core/kdeconnectplugin.h>
 
-class InputCaptureSession;
+class InputCaptureBackend;
 class QScreen;
 
 class ShareInputDevicesPlugin : public KdeConnectPlugin
@@ -26,6 +26,10 @@ public:
 
 private:
     Qt::Edge configuredEdge() const;
-    InputCaptureSession *m_inputCaptureSession;
+    InputCaptureBackend *m_inputCaptureSession = nullptr;
     QLine m_activatedBarrier;
+    QPointF m_lastReleasePosition;
+    bool m_shellInput = false; // the phone injects through the shell: it understands exact buttons and key codes
+    bool m_setupNotified = false;
+    double m_pointerSpeed = 1;
 };

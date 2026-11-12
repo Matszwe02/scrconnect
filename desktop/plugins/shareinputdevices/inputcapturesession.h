@@ -12,6 +12,8 @@
 
 #include <memory>
 
+#include "inputcapturebackend.h"
+
 class OrgFreedesktopPortalInputCaptureInterface;
 class QSocketNotifier;
 class OrgFreedesktopPortalSessionInterface;
@@ -19,22 +21,19 @@ class Xkb;
 struct ei;
 struct ei_event;
 
-class InputCaptureSession : public QObject
+class InputCaptureSession : public InputCaptureBackend
 {
     Q_OBJECT
 public:
     InputCaptureSession(QObject *parent);
     ~InputCaptureSession() override;
 
-    void setBarrierEdge(Qt::Edge edge);
-    void release(const QPointF &position);
-Q_SIGNALS:
-    void started(const QLine &barrier, const QPointF &delta);
-    void mouseMove(double dx, double dy);
-    void mouseButton(int button, bool pressed);
-    void scrollDelta(double dx, double dy);
-    void scrollDiscrete(int dx, int dy);
-    void key(Qt::Key key, Qt::KeyboardModifiers modifiers, const QString &text);
+    void setBarrierEdge(Qt::Edge edge) override;
+    void release(const QPointF &position) override;
+    bool isActive() const override
+    {
+        return m_active;
+    }
 
 private:
     void getZones();
@@ -60,6 +59,7 @@ private:
     uint m_currentZoneSet = 0;
     QList<QRect> m_currentZones;
     uint m_currentActivationId = 0;
+    bool m_active = false; // between the portal's Activated and Deactivated signals
     uint m_currentEisSequence = 0;
     QList<ei_event *> queuedEiEvents;
     std::unique_ptr<QSocketNotifier> m_eiNotifier;

@@ -56,8 +56,8 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
     <string name="pref_plugin_receive_notifications_desc">Receive notifications from the other device and display them on Android</string>
     <string name="pref_plugin_sharereceiver">Share and receive</string>
     <string name="pref_plugin_sharereceiver_desc">Share files and URLs between devices</string>
-    <string name="pref_plugin_inputdevicesreceiver">Share input devices</string>
-    <string name="pref_plugin_inputdevicesreceiver_desc">Share mouse and keyboard with the remote device</string>
+    <string name="pref_plugin_inputdevicesreceiver">Phone Leap</string>
+    <string name="pref_plugin_inputdevicesreceiver_desc">Leap your computer\'s mouse and keyboard onto this phone</string>
     <string name="device_list_empty">No devices</string>
     <string name="ok">OK</string>
     <string name="sad_ok">OK :(</string>
@@ -678,6 +678,8 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
 
     <string name="pref_plugin_screenmirror">Screen mirroring</string>
     <string name="pref_plugin_screenmirror_desc">Show this phone\'s screen or a single app in a window on the computer</string>
+    <string name="mirror_open_on_pc_title">“Open on PC” for notifications</string>
+    <string name="mirror_open_on_pc_summary">Lets the computer open a notification\'s chat or mail in an app window</string>
 
     <string name="mirror_setup_title">ADB setup</string>
     <string name="mirror_setup_checking">Checking your phone…</string>

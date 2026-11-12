@@ -17,7 +17,9 @@
         "kdeconnect.mirror.apps.request",
         "kdeconnect.mirror.request",
         "kdeconnect.mirror.control",
-        "kdeconnect.mirror.stop"
+        "kdeconnect.mirror.stop",
+        "kdeconnect.mirror.open",
+        "kdeconnect.mirror.handoff.return"
     ],
     "X-KdeConnect-SupportedPacketType": [
         "kdeconnect.mirror.status",

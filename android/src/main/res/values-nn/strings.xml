@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">Ta imot varslingar frå den andre eininga og vis dei i Android</string>
   <string name="pref_plugin_sharereceiver">Del og ta imot</string>
   <string name="pref_plugin_sharereceiver_desc">Del filer og nettadresser mellom einingar</string>
-  <string name="pref_plugin_inputdevicesreceiver">Del inneiningar</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Del mus og tastatur med ekstern eining</string>
   <string name="device_list_empty">Ingen einingar</string>
   <string name="ok">OK</string>
   <string name="sad_ok">OK :(</string>

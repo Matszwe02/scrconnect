@@ -22,6 +22,7 @@
 #include <knotifications_version.h>
 
 #include <core/filetransferjob.h>
+#include <core/kdeconnectplugin.h>
 #include <core/notificationserverinfo.h>
 
 QMap<QString, FileTransferJob *> Notification::s_downloadsInProgress;
@@ -140,6 +141,16 @@ void Notification::createKNotification(const NetworkPacket &np)
         connect(action, &KNotificationAction::activated, this, [this, actionId] {
             Q_EMIT actionTriggered(m_internalId, actionId);
         });
+    }
+
+    // Phones running this fork name the app when it can be opened in a mirror window
+    if (const QString package = np.get<QString>(QStringLiteral("mirrorPackage")); !package.isEmpty()) {
+        if (KdeConnectPlugin *mirror = m_device->plugin(QStringLiteral("kdeconnect_screenmirror"))) {
+            KNotificationAction *action = m_notification->addAction(i18nc("@action:button open the phone app in a window", "Open on PC"));
+            connect(action, &KNotificationAction::activated, mirror, [mirror, id = m_internalId, package] {
+                QMetaObject::invokeMethod(mirror, "openNotification", Q_ARG(QString, id), Q_ARG(QString, package));
+            });
+        }
     }
 
     m_notification->setPixmap({});

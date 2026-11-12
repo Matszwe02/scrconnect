@@ -14,6 +14,7 @@ import org.kde.kdeconnect.KdeConnectAccessibilityService
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.plugins.inputdevicesreceiver.InputDevicesReceiverPlugin
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
 import org.kde.kdeconnect_tp.R
 import kotlin.math.ceil
@@ -38,6 +39,7 @@ class MouseReceiverPlugin : Plugin() {
             .create()
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
+        if (device.getPlugin<InputDevicesReceiverPlugin>()?.leapInput == true) return true // injected through the shell instead
         if (getMousePadPacketType(np) != MousePadPacketType.Mouse) {
             return false // This packet will be handled by the remotekeyboard instead, silently ignore
         }

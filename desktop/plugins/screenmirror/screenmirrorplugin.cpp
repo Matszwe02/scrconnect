@@ -25,6 +25,8 @@ using namespace Qt::StringLiterals;
 #define PACKET_TYPE_MIRROR_REQUEST u"kdeconnect.mirror.request"_s
 #define PACKET_TYPE_MIRROR_CONTROL u"kdeconnect.mirror.control"_s
 #define PACKET_TYPE_MIRROR_STOP u"kdeconnect.mirror.stop"_s
+#define PACKET_TYPE_MIRROR_OPEN u"kdeconnect.mirror.open"_s
+#define PACKET_TYPE_MIRROR_HANDOFF_RETURN u"kdeconnect.mirror.handoff.return"_s
 #define PACKET_TYPE_MIRROR_STATUS u"kdeconnect.mirror.status"_s
 #define PACKET_TYPE_MIRROR_APPS u"kdeconnect.mirror.apps"_s
 #define PACKET_TYPE_MIRROR_ICONS u"kdeconnect.mirror.icons"_s
@@ -108,11 +110,54 @@ QString ScreenMirrorPlugin::startSession(const QString &mode, const QString &pac
         config()->set(u"codec"_s, codec);
     }
     np.set(u"codec"_s, config()->getString(u"codec"_s, u"h264"_s));
+    for (const QString &key : {u"notificationId"_s, u"handoff"_s, u"handoffTaskId"_s}) {
+        if (options.contains(key)) {
+            np.set(key, options.value(key));
+        }
+    }
     if (!sendPacket(np)) {
         destroySession(id, false);
         return {};
     }
     return id;
+}
+
+void ScreenMirrorPlugin::openNotification(const QString &notificationId, const QString &packageName)
+{
+    if (const QString open = m_notificationWindows.value(packageName); m_sessions.contains(open)) {
+        NetworkPacket np(PACKET_TYPE_MIRROR_OPEN, {{u"sessionId"_s, open}, {u"notificationId"_s, notificationId}, {u"package"_s, packageName}});
+        sendPacket(np);
+        return;
+    }
+    const QString id = startSession(u"app"_s, packageName, {{u"notificationId"_s, notificationId}});
+    if (!id.isEmpty() && launchViewer({u"--attach"_s, id, u"--app"_s, packageName})) {
+        m_notificationWindows.insert(packageName, id);
+    } else {
+        destroySession(id, true);
+    }
+}
+
+void ScreenMirrorPlugin::openHandoffWindow(const QString &packageName, const QString &label, int taskId, int x, int y)
+{
+    const QString id = startSession(u"app"_s, packageName, {{u"handoff"_s, true}, {u"handoffTaskId"_s, taskId}});
+    if (!id.isEmpty() && !launchViewer({u"--attach"_s, id, u"--app"_s, packageName, u"--label"_s, label, u"--handoff"_s, u"%1,%2"_s.arg(x).arg(y)})) {
+        destroySession(id, true);
+    }
+}
+
+void ScreenMirrorPlugin::returnToPhone(const QString &sessionId)
+{
+    if (m_sessions.contains(sessionId)) {
+        NetworkPacket np(PACKET_TYPE_MIRROR_HANDOFF_RETURN, {{u"sessionId"_s, sessionId}});
+        sendPacket(np);
+        destroySession(sessionId, false);
+    }
+}
+
+int ScreenMirrorPlugin::phoneEdge() const
+{
+    const KdeConnectPlugin *share = device()->plugin(u"kdeconnect_shareinputdevices"_s);
+    return share ? share->config()->getInt(u"edge"_s, Qt::LeftEdge) : 0;
 }
 
 void ScreenMirrorPlugin::stopSession(const QString &sessionId)
@@ -126,6 +171,9 @@ void ScreenMirrorPlugin::destroySession(const QString &id, bool notifyPhone)
     if (!s.video) {
         return;
     }
+    m_notificationWindows.removeIf([&id](const auto &it) {
+        return it.value() == id;
+    });
     if (notifyPhone) {
         NetworkPacket np(PACKET_TYPE_MIRROR_STOP, {{u"sessionId"_s, id}});
         sendPacket(np);

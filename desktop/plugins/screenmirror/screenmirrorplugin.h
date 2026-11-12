@@ -32,14 +32,21 @@ public:
     QString dbusPath() const override;
 
     /**
-     * mode: "screen" or "app" (packageName required). options: width, height, codec. Returns the session id, empty on
-     * failure; the viewer then connects to the local socket "kdeconnect-mirror-<id>".
+     * mode: "screen" or "app" (packageName required). options: width, height, codec, notificationId, handoff, handoffTaskId.
+     * Returns the session id, empty on failure; the viewer then connects to the local socket "kdeconnect-mirror-<id>".
      */
     Q_SCRIPTABLE QString startSession(const QString &mode, const QString &packageName, const QVariantMap &options);
     Q_SCRIPTABLE void stopSession(const QString &sessionId);
     Q_SCRIPTABLE bool screenOffDefault(const QString &mode) const;
     Q_SCRIPTABLE void requestApps(const QStringList &iconsFor);
     Q_SCRIPTABLE void openViewer(bool wholeScreen);
+
+    Q_SCRIPTABLE void openNotification(const QString &notificationId, const QString &packageName);
+    /** An app dragged out of the phone with Phone Leap: opens it in a window that follows the pointer. */
+    Q_INVOKABLE void openHandoffWindow(const QString &packageName, const QString &label, int taskId, int x, int y);
+    Q_SCRIPTABLE void returnToPhone(const QString &sessionId);
+    /** The screen edge (Qt::Edge) behind which Phone Leap puts the phone, 0 if that plugin is off. */
+    Q_SCRIPTABLE int phoneEdge() const;
 
 Q_SIGNALS:
     Q_SCRIPTABLE void statusChanged(const QString &sessionId, const QString &state, const QString &message);
@@ -57,4 +64,5 @@ private:
     bool launchViewer(const QStringList &arguments);
 
     QHash<QString, Session> m_sessions;
+    QHash<QString, QString> m_notificationWindows;
 };

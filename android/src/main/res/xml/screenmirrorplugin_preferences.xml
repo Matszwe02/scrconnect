@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+SPDX-FileCopyrightText: 2026 KDE Connect contributors
+
+SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
+-->
+
+<androidx.preference.PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@xml/screenmirrorplugin_preferences">
+
+    <SwitchPreferenceCompat
+        android:defaultValue="true"
+        android:key="mirror_open_on_pc"
+        android:summary="@string/mirror_open_on_pc_summary"
+        android:title="@string/mirror_open_on_pc_title" />
+
+</androidx.preference.PreferenceScreen>

@@ -38,6 +38,7 @@ import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.helpers.AppsHelper.appNameLookup
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.plugins.screenmirror.ScreenMirrorPlugin
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
 import org.kde.kdeconnect_tp.R
@@ -249,6 +250,7 @@ class NotificationsPlugin : Plugin(), NotificationReceiver.NotificationListener 
         val isGroupConversation = isConversation && messagingStyle.isGroupConversation() && messagingStyle.conversationTitle != null
 
         np["actions"] = extractActions(notification, key)
+        if (device.getPlugin<ScreenMirrorPlugin>()?.openOnPcEnabled() == true) np["mirrorPackage"] = packageName
 
         // Some apps ask to notify the user only once they are posted and not for updates, but (for some reason),
         // some messaging apps also set that flag, and we should notify the user for every new message (since they
@@ -570,6 +572,8 @@ class NotificationsPlugin : Plugin(), NotificationReceiver.NotificationListener 
         private fun extractStringFromExtra(extras: Bundle, key: String): String? {
             return extras.getCharSequence(key)?.toString()
         }
+
+        fun notificationKey(statusBarNotification: StatusBarNotification): String = getNotificationKeyCompat(statusBarNotification)
 
         private fun getNotificationKeyCompat(statusBarNotification: StatusBarNotification): String {
             // first check if it's one of our remoteIds

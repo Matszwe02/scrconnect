@@ -25,6 +25,7 @@ import org.kde.kdeconnect.KdeConnectAccessibilityService
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.plugins.inputdevicesreceiver.InputDevicesReceiverPlugin
 import org.kde.kdeconnect.plugins.remotekeyboardime.RemoteKeyboardIMEPlugin
 import org.kde.kdeconnect.plugins.remotekeyboardime.RemoteKeyboardService
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
@@ -91,6 +92,7 @@ class RemoteKeyboardPlugin : Plugin() {
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
+        if (device.getPlugin<InputDevicesReceiverPlugin>()?.leapInput == true) return false // injected through the shell instead
         // Check if this package is for the Mouse Receiver
         if (!(np.has("key") || np.has("specialKey"))) {
             return false

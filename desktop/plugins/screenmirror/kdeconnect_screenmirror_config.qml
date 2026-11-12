@@ -64,13 +64,20 @@ Kirigami.ScrollablePage {
                     "Alt+N · Alt+Shift+N", i18nd("kdeconnect-plugins", "Open · close the notifications"),
                     "Ctrl+O · Ctrl+Shift+O", i18nd("kdeconnect-plugins", "Phone screen off · on"),
                     "Ctrl+V", i18nd("kdeconnect-plugins", "Paste this computer's clipboard"),
-                    i18nd("kdeconnect-plugins", "Ctrl+right click"), i18nd("kdeconnect-plugins", "Menu: phone screen off")
+                    "Alt+P", i18nd("kdeconnect-plugins", "Move an app window back to the phone"),
+                    i18nd("kdeconnect-plugins", "Ctrl+right click"), i18nd("kdeconnect-plugins", "Menu: phone screen off, move an app window back")
                 ]
                 delegate: QQC2.Label {
                     text: modelData
                     font.bold: index % 2 === 0
                 }
             }
+        }
+        QQC2.Label {
+            Kirigami.FormData.label: i18nd("kdeconnect-plugins", "App hand-off:")
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 25
+            wrapMode: Text.WordWrap
+            text: i18nd("kdeconnect-plugins", "With Phone Leap, drag an app out of the phone's screen and it opens in a window here. Drag the window past the phone's screen edge to give it back. On Wayland desktops other than Plasma, windows cannot be dragged back: use Alt+P.")
         }
     }
 }

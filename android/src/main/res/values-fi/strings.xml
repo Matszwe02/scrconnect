@@ -39,8 +39,6 @@
   <string name="pref_plugin_receive_notifications_desc">Vastaanota ilmoituksia toiselta laitteelta ja näytä ne Androidissa</string>
   <string name="pref_plugin_sharereceiver">Jako ja vastaanottaminen</string>
   <string name="pref_plugin_sharereceiver_desc">Jaa tiedostoja ja osoitteita laitteiden välillä</string>
-  <string name="pref_plugin_inputdevicesreceiver">Jaa syötelaitteita</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Jaa hiiri ja näppäimistö etälaitteen kanssa</string>
   <string name="device_list_empty">Ei laitteita</string>
   <string name="ok">OK</string>
   <string name="sad_ok">OK :(</string>

@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">Ta emot underrättelser från andra apparater och visa dem på Android</string>
   <string name="pref_plugin_sharereceiver">Dela och ta emot</string>
   <string name="pref_plugin_sharereceiver_desc">Dela filer och webbadresser mellan apparater</string>
-  <string name="pref_plugin_inputdevicesreceiver">Dela inmatningsenheter</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Dela mus och tangentbord med den andra apparaten</string>
   <string name="device_list_empty">Inga apparater</string>
   <string name="ok">Ok</string>
   <string name="sad_ok">Ok</string>

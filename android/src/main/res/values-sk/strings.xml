@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">Prijme upozornenia z iného zariadenia a zobrazí ich v systéme Android</string>
   <string name="pref_plugin_sharereceiver">Zdieľanie a prijímanie</string>
   <string name="pref_plugin_sharereceiver_desc">Zdieľa súbory a URL medzi zariadeniami</string>
-  <string name="pref_plugin_inputdevicesreceiver">Zdieľanie schránky medzi zariadeniami</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Vyvolanie preddefinovaných príkazov na vzdialenom zariadení</string>
   <string name="device_list_empty">Žiadne zariadenia</string>
   <string name="ok">OK</string>
   <string name="sad_ok">OK :(</string>

@@ -84,6 +84,7 @@ open class KdeConnectAccessibilityService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        KdeConnect.getInstance().reloadAllDevicePlugins() // plugins that need this service check their permissions again
         cursorView = View.inflate(baseContext, R.layout.mouse_receiver_cursor, null).apply {
             // https://developer.android.com/training/system-ui/navigation.html#behind
             systemUiVisibility = (View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -151,6 +152,25 @@ open class KdeConnectAccessibilityService : AccessibilityService() {
             } catch (e: IllegalArgumentException) {
                 e.printStackTrace()
             }
+        }
+    }
+
+    /** Shows the cursor here until [hideCursorNow]; Phone Leap's shell input tracks the position itself. */
+    fun showCursorAt(px: Int, py: Int) {
+        runHandler.post {
+            runHandler.removeCallbacks(hideRunnable)
+            val view = cursorView ?: return@post
+            cursorLayout.x = px - cursorHalfWidth
+            cursorLayout.y = py - cursorHalfHeight
+            runCatching { windowManager.updateViewLayout(view, cursorLayout) }
+            view.visibility = View.VISIBLE
+        }
+    }
+
+    fun hideCursorNow() {
+        runHandler.post {
+            runHandler.removeCallbacks(hideRunnable)
+            cursorView?.visibility = View.GONE
         }
     }
 
@@ -294,6 +314,8 @@ open class KdeConnectAccessibilityService : AccessibilityService() {
         cursorView?.let {
             windowManager.removeView(it)
         }
+        if (instance === this) instance = null // otherwise the service looks enabled after the user turned it off
+        KdeConnect.getInstance().reloadAllDevicePlugins()
         super.onDestroy()
     }
 

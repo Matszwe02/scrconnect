@@ -41,8 +41,6 @@
   <string name="pref_plugin_receive_notifications_desc">Odbiera powiadomienia z innych urządzeń</string>
   <string name="pref_plugin_sharereceiver">Udostępnianie i pobieranie</string>
   <string name="pref_plugin_sharereceiver_desc">Udostępnia pliki i adresy URL pomiędzy urządzeniami</string>
-  <string name="pref_plugin_inputdevicesreceiver">Współdzielenie urządzeń obsługi</string>
-  <string name="pref_plugin_inputdevicesreceiver_desc">Współdzielenie myszy i klawiatury z urządzeniem zdalnym</string>
   <string name="device_list_empty">Brak urządzeń</string>
   <string name="ok">OK</string>
   <string name="sad_ok">OK :(</string>

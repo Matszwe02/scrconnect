@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=SCR Connect
+Exec=scrconnect
+Icon=kdeconnect
+Categories=Network;

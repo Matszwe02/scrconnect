@@ -28,6 +28,15 @@ plugins {
 
 val licenseResDir = "$projectDir/build/dependency-license-res"
 
+// Robolectric would download its Android framework itself, outside Gradle's cache and without retries (HTTP 429 from
+// Maven Central on fresh Docker/CI builds): Gradle fetches it instead and Robolectric runs offline
+val robolectricAndroid: Configuration by configurations.creating
+val robolectricDir = "$projectDir/build/robolectric"
+val robolectricJars = tasks.register<Sync>("robolectricJars") {
+    from(robolectricAndroid)
+    into(robolectricDir)
+}
+
 kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_11
@@ -58,6 +67,9 @@ android {
 
     testOptions.unitTests.all {
         it.systemProperty("robolectric.conscryptMode", "OFF")
+        it.dependsOn(robolectricJars)
+        it.systemProperty("robolectric.offline", "true")
+        it.systemProperty("robolectric.dependency.dir", robolectricDir)
     }
 
     compileOptions {
@@ -332,6 +344,7 @@ dependencies {
         exclude(group = "org.robolectric", module = "nativeruntime-dist-compat")
     }
     testImplementation(libs.androidx.junit)
+    robolectricAndroid("org.robolectric:android-all-instrumented:6.0.1_r3-robolectric-r1-i7") { isTransitive = false }
 
     // For device controls
     implementation(libs.reactive.streams)

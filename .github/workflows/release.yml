@@ -1,0 +1,163 @@
+# Builds every distributable for a release and attaches it to that release:
+#   - SCR_Connect-<tag>-x86_64.AppImage
+#   - SCR_Connect-<tag>-x86_64.flatpak
+#   - scrconnect-<tag>-linux-x86_64.tar.xz   (the "linux unpacked" bundle: extract and run ./scrconnect)
+#   - SCR_Connect-<tag>-android.apk
+#   - LICENSE, THIRD_PARTY.md, SHA256SUMS
+# Trigger: a release is published. "Run workflow" (workflow_dispatch) builds the same files as downloadable run artifacts
+# without touching any release.
+#
+# The build itself is docker/build.sh, the same as a local build (see README.md): images in docker/*.Dockerfile, steps in
+# docker/scripts/, packaging files in docker/packaging/. This file only splits it into parallel jobs and publishes.
+#
+# Android signing (optional): add the repository secrets ANDROID_KEYSTORE_BASE64 (base64 of the .jks), ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD to get a signed release build. Without them the debug build is shipped
+# (applicationId io.github.matszwe02.scrconnect.debug, signed with the debug key).
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a newer manual run of the same branch supersedes an older one; release builds are never cancelled
+concurrency:
+  group: release-${{ github.event_name == 'release' && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_dispatch' }}
+
+jobs:
+  meta:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - id: v
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          v=${TAG:-dev-${SHA::7}}
+          echo "version=$(printf '%s' "$v" | tr -c 'A-Za-z0-9._-' '_')" >> "$GITHUB_OUTPUT"
+
+  # ---------------------------------------------------------------------------------------------------------------------
+  # Desktop: compile, bundle, tarball and AppImage in one job (the AppImage needs only the bundle and the same image).
+  # The bundle is handed to the Flatpak job.
+  # ---------------------------------------------------------------------------------------------------------------------
+  desktop:
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: .cache/ccache
+          key: ccache-desktop-${{ github.sha }}
+          restore-keys: ccache-desktop-
+
+      - name: Build the tarball and the AppImage
+        run: docker/build.sh desktop appimage
+
+      - name: Hand the bundle over
+        # permissions survive inside a tar
+        run: GZIP=-3 tar -czf bundle.tar.gz scrconnect-linux-unpacked
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-desktop
+          path: |
+            dist/*.tar.xz
+            dist/*.AppImage
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle
+          path: bundle.tar.gz
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------------------------------------------------
+  flatpak:
+    needs: [meta, desktop]
+    runs-on: ubuntu-24.04
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundle
+      - name: Build the Flatpak
+        run: |
+          tar -xzf bundle.tar.gz
+          docker/build.sh flatpak
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-flatpak
+          path: dist/*.flatpak
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------------------------------------------------
+  apk:
+    needs: meta
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .cache/gradle/caches
+            .cache/gradle/wrapper
+          key: gradle-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle/**') }}
+          restore-keys: gradle-
+
+      - name: Unit tests, build and sign
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: docker/build.sh apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: dist/*.apk
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------------------------------------------------------------
+  publish:
+    if: github.event_name == 'release'
+    needs: [desktop, flatpak, apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          cp LICENSE THIRD_PARTY.md dist/
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          ls -lh
+          gh release upload "$TAG" ./* --clobber --repo "$GITHUB_REPOSITORY"

@@ -1,0 +1,107 @@
+#!/bin/sh
+# SCR Connect. Starts this bundle's daemon if it is not running, then the app.
+#   scrconnect                      open the app
+#   scrconnect mirror [args]        open a mirror window (kdeconnect-mirror --device <id> --screen | --app <package>)
+#   scrconnect cli [args]           kdeconnect-cli
+#   scrconnect run <binary> [args]  run any binary of the bundle (kdeconnect-sms, kdeconnect-handler, ...)
+#   scrconnect daemon               run the daemon in the foreground (autostart / D-Bus activation use this)
+#   scrconnect --quit               stop the daemon
+#   scrconnect --install-integration | --remove-integration
+#                                   autostart, D-Bus activation, launchers, URL handler, file-manager "send to" entries
+H=$(dirname "$(readlink -f "$0")")
+APPS=${XDG_DATA_HOME:-$HOME/.local/share}
+CFG=${XDG_CONFIG_HOME:-$HOME/.config}
+ours() { for p in $(pgrep -x kdeconnectd); do [ "$(readlink -f /proc/$p/exe)" = "$H/usr/bin/kdeconnectd" ] && return 0; done; return 1; }
+
+install_integration() {
+  mkdir -p "$APPS/applications" "$APPS/dbus-1/services" "$CFG/autostart" "$APPS/icons"
+  # 1. The distro's own kdeconnect (if installed) must not start next to this one: two daemons fight over the D-Bus
+  #    name org.kde.kdeconnect and port 1716.
+  for f in /etc/xdg/autostart/org.kde.kdeconnect.daemon.desktop; do
+    if [ -e "$f" ]; then
+      printf '[Desktop Entry]\nType=Application\nHidden=true\n' > "$CFG/autostart/$(basename "$f")"
+      echo "Disabled the system kdeconnect autostart ($f) for this user."
+    fi
+  done
+  if [ -x /usr/bin/kdeconnectd ]; then
+    echo "NOTE: the system package kdeconnect is installed (/usr/bin/kdeconnectd). Its D-Bus service file is shadowed by ours"
+    echo "      (user directories win), but remove the package if you see two daemons."
+  fi
+  # 2. Autostart + D-Bus activation of this bundle's daemon
+  cat > "$CFG/autostart/org.kde.kdeconnect.daemon.desktop" <<EOT
+[Desktop Entry]
+Type=Application
+Name=SCR Connect
+Exec=$H/scrconnect daemon
+Icon=kdeconnect
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=1
+EOT
+  cat > "$APPS/dbus-1/services/org.kde.kdeconnect.service" <<EOT
+[D-BUS Service]
+Name=org.kde.kdeconnect
+Exec=$H/scrconnect daemon
+EOT
+  # 3. Launchers: same files as the bundle's, with Exec= pointing at the bundle
+  for src in "$H"/usr/share/applications/*.desktop; do
+    name=$(basename "$src")
+    case "$name" in org.kde.kdeconnect.daemon.desktop|org.kde.kdeconnect.nonplasma.desktop) continue;; esac
+    sed -E "s#^Exec=kdeconnect-app#Exec=$H/scrconnect#;
+            s#^Exec=kdeconnect-mirror#Exec=$H/scrconnect mirror#;
+            s#^Exec=(kdeconnect-[a-z-]+)#Exec=$H/scrconnect run \\1#;
+            s#^TryExec=.*##" "$src" > "$APPS/applications/$name"
+  done
+  # 4. File managers
+  mkdir -p "$APPS/Thunar/sendto" "$APPS/nautilus-python/extensions" "$APPS/nemo/actions"
+  sed -E "s#^Exec=kdeconnect-handler#Exec=$H/scrconnect run kdeconnect-handler#" \
+    "$H/usr/share/Thunar/sendto/kdeconnect-thunar.desktop" > "$APPS/Thunar/sendto/kdeconnect-thunar.desktop"
+  cp "$H/usr/share/nautilus-python/extensions/kdeconnect-share.py" "$APPS/nautilus-python/extensions/" # talks to D-Bus only
+  cat > "$APPS/nemo/actions/kdeconnect-send.nemo_action" <<EOT
+[Nemo Action]
+Name=Send via SCR Connect
+Comment=Send the selected files to a phone
+Exec=$H/scrconnect run kdeconnect-handler %F
+Icon-Name=kdeconnect
+Selection=notnone
+Extensions=any;
+EOT
+  # 5. Icons and cache refresh
+  [ -d "$H/usr/share/icons/hicolor" ] && cp -a "$H/usr/share/icons/hicolor" "$APPS/icons/"
+  command -v update-desktop-database >/dev/null && update-desktop-database "$APPS/applications" 2>/dev/null
+  command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$APPS/icons/hicolor" 2>/dev/null
+  echo "Integration installed (bundle: $H)."
+  echo "Firewall: SCR Connect needs ports 1714-1764 (TCP and UDP) open on the local network, e.g."
+  echo "  ufw:       sudo ufw allow 1714:1764/tcp && sudo ufw allow 1714:1764/udp"
+  echo "  firewalld: sudo firewall-cmd --permanent --zone=public --add-service=kdeconnect && sudo firewall-cmd --reload"
+  echo "Dolphin / Plasma widget / KIO: need a Plasma 6 host built against the same Qt/KF ABI; they are not usable from this"
+  echo "bundle. On Plasma, prefer a native build of this fork."
+}
+
+remove_integration() {
+  rm -f "$CFG/autostart/org.kde.kdeconnect.daemon.desktop" "$APPS/dbus-1/services/org.kde.kdeconnect.service" \
+        "$APPS/Thunar/sendto/kdeconnect-thunar.desktop" "$APPS/nautilus-python/extensions/kdeconnect-share.py" \
+        "$APPS/nemo/actions/kdeconnect-send.nemo_action"
+  for src in "$H"/usr/share/applications/*.desktop; do rm -f "$APPS/applications/$(basename "$src")"; done
+  command -v update-desktop-database >/dev/null && update-desktop-database "$APPS/applications" 2>/dev/null
+  echo "Integration removed. (If the system kdeconnect was in use, re-enable it by deleting any Hidden=true override in $CFG/autostart.)"
+}
+
+case "$1" in
+  --quit) pkill -x kdeconnectd; exit 0;;
+  --install-integration) install_integration; exit 0;;
+  --remove-integration) remove_integration; exit 0;;
+  daemon) pkill -x kdeconnectd 2>/dev/null
+    exec "$H/run.sh" kdeconnectd;;
+  run) shift; b=$1; shift; exec "$H/run.sh" "$b" "$@";;
+esac
+if ! ours; then
+  pkill -x kdeconnectd 2>/dev/null && sleep 1   # the system's own daemon would own org.kde.kdeconnect and has no mirroring
+  "$H/run.sh" kdeconnectd >/dev/null 2>&1 &
+  sleep 3
+fi
+case "$1" in
+  mirror) shift; exec "$H/run.sh" kdeconnect-mirror "$@" ;;
+  cli) shift; exec "$H/run.sh" kdeconnect-cli "$@" ;;
+  *) exec "$H/run.sh" kdeconnect-app "$@" ;;
+esac

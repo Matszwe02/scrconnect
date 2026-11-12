@@ -1,0 +1,49 @@
+# SCR Connect as a Flatpak: the self-contained bundle made by ../bundle.sh copied into /app.
+# Built by docker/scripts/flatpak.sh (locally through docker/build.sh, and in CI), which copies the bundle into ./bundle
+# next to a copy of this manifest.
+app-id: local.scrconnect.App
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: scrconnect
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=all                      # v4l2loopback cameras (the kernel module itself is never bundled)
+  - --filesystem=xdg-run/pipewire-0
+  - --filesystem=home                 # send files, receive into Downloads
+  - --own-name=org.kde.kdeconnect
+  - --own-name=org.kde.kdeconnect.*
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.freedesktop.ScreenSaver
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.portal.*
+modules:
+  - name: scrconnect
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/bin /app/share/applications
+      - cp -a bundle/. /app/
+      - install -Dm644 bundle/usr/share/icons/hicolor/scalable/apps/kdeconnect.svg /app/share/icons/hicolor/scalable/apps/local.scrconnect.App.svg
+      - |
+        cat > /app/bin/scrconnect <<'EOS'
+        #!/bin/sh
+        exec /app/scrconnect "$@"
+        EOS
+      - chmod +x /app/bin/scrconnect /app/scrconnect /app/run.sh
+      - |
+        cat > /app/share/applications/local.scrconnect.App.desktop <<'EOS'
+        [Desktop Entry]
+        Type=Application
+        Name=SCR Connect
+        Exec=scrconnect
+        Icon=local.scrconnect.App
+        Categories=Network;
+        EOS
+    sources:
+      - type: dir
+        path: bundle
+        dest: bundle

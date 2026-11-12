@@ -1,0 +1,8 @@
+# outputs and caches of the local build (docker/build.sh)
+/build/
+/AppDir/
+/AppImageDir/
+/scrconnect-linux-unpacked/
+/flatpak-build/
+/dist/
+/.cache/

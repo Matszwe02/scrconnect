@@ -145,6 +145,14 @@ ScreenMirrorDeviceDbusInterface::ScreenMirrorDeviceDbusInterface(const QString &
 {
 }
 
+WebcamDeviceDbusInterface::WebcamDeviceDbusInterface(const QString &deviceId, QObject *parent)
+    : OrgKdeKdeconnectDeviceWebcamInterface(DaemonDbusInterface::activatedService(),
+                                            QLatin1String("/modules/kdeconnect/devices/%1/webcam").arg(deviceId),
+                                            QDBusConnection::sessionBus(),
+                                            parent)
+{
+}
+
 RemoteCommandsDbusInterface::RemoteCommandsDbusInterface(const QString &deviceId, QObject *parent)
     : OrgKdeKdeconnectDeviceRemotecommandsInterface(DaemonDbusInterface::activatedService(),
                                                     QLatin1String("/modules/kdeconnect/devices/%1/remotecommands").arg(deviceId),

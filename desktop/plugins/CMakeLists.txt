@@ -43,6 +43,7 @@ if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")
     add_subdirectory(shareinputdevices)
     add_subdirectory(shareinputdevicesremote)
     add_subdirectory(screenmirror)
+    add_subdirectory(webcam)
 endif()
 
 if(NOT APPLE)

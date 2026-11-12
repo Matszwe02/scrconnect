@@ -18,6 +18,7 @@
 #include "generated/deviceinterface.h"
 #include "generated/devicenotificationsinterface.h"
 #include "generated/devicescreenmirrorinterface.h"
+#include "generated/devicewebcaminterface.h"
 #include "generated/devicesftpinterface.h"
 #include "generated/lockdeviceinterface.h"
 #include "generated/mprisremoteinterface.h"
@@ -191,6 +192,13 @@ class KDECONNECTDBUSINTERFACES_EXPORT ScreenMirrorDeviceDbusInterface : public O
     Q_OBJECT
 public:
     explicit ScreenMirrorDeviceDbusInterface(const QString &deviceId, QObject *parent = nullptr);
+};
+
+class KDECONNECTDBUSINTERFACES_EXPORT WebcamDeviceDbusInterface : public OrgKdeKdeconnectDeviceWebcamInterface
+{
+    Q_OBJECT
+public:
+    explicit WebcamDeviceDbusInterface(const QString &deviceId, QObject *parent = nullptr);
 };
 
 class KDECONNECTDBUSINTERFACES_EXPORT RemoteCommandsDbusInterface : public OrgKdeKdeconnectDeviceRemotecommandsInterface

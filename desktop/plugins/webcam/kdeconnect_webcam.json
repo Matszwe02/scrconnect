@@ -1,0 +1,26 @@
+{
+    "$schema": "../kdeconnect.schema.json",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "KDE Connect contributors"
+            }
+        ],
+        "Description": "Use the phone's cameras as webcams",
+        "EnabledByDefault": false,
+        "Icon": "camera-web",
+        "License": "GPL",
+        "Name": "Camera sharing"
+    },
+    "X-KDE-ConfigModule": "kdeconnect/kcms/kdeconnect_webcam_config",
+    "X-KdeConnect-OutgoingPacketType": [
+        "kdeconnect.webcam.cameras.request",
+        "kdeconnect.webcam.start",
+        "kdeconnect.webcam.stop"
+    ],
+    "X-KdeConnect-SupportedPacketType": [
+        "kdeconnect.webcam.cameras",
+        "kdeconnect.webcam.video",
+        "kdeconnect.webcam.status"
+    ]
+}

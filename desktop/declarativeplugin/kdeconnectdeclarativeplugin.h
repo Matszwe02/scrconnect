@@ -197,6 +197,14 @@ class ScreenMirrorDeviceDbusInterfaceForeign
     QML_FOREIGN(ScreenMirrorDeviceDbusInterface)
 };
 
+class WebcamDeviceDbusInterfaceForeign
+{
+    Q_GADGET
+    QML_NAMED_ELEMENT(WebcamDbusInterface)
+    QML_UNCREATABLE("")
+    QML_FOREIGN(WebcamDeviceDbusInterface)
+};
+
 class SmsDbusInterfaceForeign
 {
     Q_GADGET
@@ -402,6 +410,18 @@ public:
     Q_INVOKABLE ScreenMirrorDeviceDbusInterface *create(const QString &deviceId)
     {
         return new ScreenMirrorDeviceDbusInterface(deviceId);
+    }
+};
+
+class WebcamDbusInterfaceFactory : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_SINGLETON
+public:
+    Q_INVOKABLE WebcamDeviceDbusInterface *create(const QString &deviceId)
+    {
+        return new WebcamDeviceDbusInterface(deviceId);
     }
 };
 

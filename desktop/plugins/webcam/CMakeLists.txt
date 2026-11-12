@@ -1,0 +1,18 @@
+kdeconnect_add_plugin(kdeconnect_webcam SOURCES webcamplugin.cpp ../screenmirror/streamrelay.cpp)
+target_link_libraries(kdeconnect_webcam kdeconnectcore Qt::DBus Qt::Network KF6::I18n)
+install(FILES kdeconnect_webcam_config.qml DESTINATION ${KDE_INSTALL_DATADIR}/kdeconnect)
+
+# The helper decodes the phone's video and feeds the virtual cameras
+pkg_check_modules(FFMPEG_WEBCAM QUIET IMPORTED_TARGET libavcodec libavutil libswscale)
+if (TARGET PkgConfig::FFMPEG_WEBCAM)
+    add_executable(kdeconnect-webcam helper/main.cpp helper/pipewiresink.cpp ../screenmirror/scrcpyprotocol.cpp ../screenmirror/videodecoder.cpp)
+    target_link_libraries(kdeconnect-webcam Qt::Gui Qt::DBus Qt::Network PkgConfig::FFMPEG_WEBCAM)
+    pkg_check_modules(PIPEWIRE QUIET IMPORTED_TARGET libpipewire-0.3)
+    if (TARGET PkgConfig::PIPEWIRE)
+        target_compile_definitions(kdeconnect-webcam PRIVATE HAVE_PIPEWIRE)
+        target_link_libraries(kdeconnect-webcam PkgConfig::PIPEWIRE)
+    endif()
+    install(TARGETS kdeconnect-webcam ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+else()
+    message(STATUS "kdeconnect-webcam is not built: it needs FFmpeg (libavcodec, libavutil, libswscale)")
+endif()

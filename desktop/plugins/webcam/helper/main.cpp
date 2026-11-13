@@ -46,6 +46,41 @@ namespace
 // PipeWire and many apps do) does not count
 constexpr quint32 kClientUsageEvent = V4L2_EVENT_PRIVATE_START + 0x08E00000 + 1;
 
+// v4l2loopback before 0.13 takes a program for its writer on VIDIOC_STREAMON only, not on write(). A program that only
+// writes leaves the device announcing neither output nor capture (exclusive_caps) when it closes it: nothing can write to
+// it, no app lists it, until the module is reloaded. Newer modules refuse this STREAMON (no buffers requested) and change
+// nothing; their first write() makes the writer.
+void claimWriter(int fd)
+{
+    int type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
+    ioctl(fd, VIDIOC_STREAMON, &type);
+}
+
+// The module checks a format request against the capabilities it reported last, so ask for them first
+bool setFormat(int fd, v4l2_format &format)
+{
+    v4l2_capability capability{};
+    ioctl(fd, VIDIOC_QUERYCAP, &capability);
+    return ioctl(fd, VIDIOC_S_FMT, &format) == 0;
+}
+
+// Frees a device left as above by an earlier writer, ours or any other program's: becoming its writer and leaving again
+bool unstick(const QByteArray &path)
+{
+    const int fd = ::open(path.constData(), O_WRONLY | O_CLOEXEC);
+    if (fd < 0) {
+        return false;
+    }
+    v4l2_capability capability{};
+    const bool stuck = ioctl(fd, VIDIOC_QUERYCAP, &capability) == 0 && (capability.capabilities & V4L2_CAP_DEVICE_CAPS)
+        && !(capability.device_caps & (V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_VIDEO_OUTPUT));
+    if (stuck) {
+        claimWriter(fd);
+    }
+    ::close(fd);
+    return stuck;
+}
+
 class V4l2Sink : public Sink
 {
 public:
@@ -77,7 +112,8 @@ public:
             }
             *exists = true;
             const QString path = u"/dev/"_s + entry;
-            const int fd = ::open(QFile::encodeName(path).constData(), O_WRONLY | O_CLOEXEC);
+            const QByteArray file = QFile::encodeName(path);
+            const int fd = ::open(file.constData(), O_WRONLY | O_CLOEXEC);
             v4l2_format format{};
             format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
             format.fmt.pix.width = width;
@@ -87,13 +123,22 @@ public:
             format.fmt.pix.bytesperline = width * 2;
             format.fmt.pix.sizeimage = width * height * 2;
             format.fmt.pix.colorspace = V4L2_COLORSPACE_SMPTE170M;
-            const bool set = fd >= 0 && ioctl(fd, VIDIOC_S_FMT, &format) == 0;
+            const v4l2_format wanted = format;
+            bool set = fd >= 0 && setFormat(fd, format);
+            int error = errno;
+            if (!set && fd >= 0 && error == EINVAL && unstick(file)) {
+                format = wanted;
+                set = setFormat(fd, format);
+                error = errno;
+                qInfo().noquote() << path << "was left unusable by an earlier program:" << (set ? "freed it" : "could not free it");
+            }
             if (set && int(format.fmt.pix.width) == width && int(format.fmt.pix.height) == height && format.fmt.pix.pixelformat == V4L2_PIX_FMT_YUYV) {
+                claimWriter(fd); // before the constructor lowers the priority: the module would refuse it then
                 return std::make_unique<V4l2Sink>(fd);
             }
             if (!quiet) {
                 const QString reason = set ? u"it keeps %1x%2 from an earlier use"_s.arg(format.fmt.pix.width).arg(format.fmt.pix.height)
-                                           : QString::fromLocal8Bit(strerror(errno));
+                                           : QString::fromLocal8Bit(strerror(error));
                 qWarning().noquote() << "Cannot use" << path << "-" << reason << "- trying again while another program has it open";
             }
             if (fd >= 0) {

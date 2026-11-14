@@ -27,6 +27,9 @@ modules:
     build-commands:
       - mkdir -p /app/bin /app/share/applications
       - cp -a bundle/. /app/
+      # The runtime's own libraries (libcurl...) need its newer OpenSSL; the bundled 3.0 in /app/lib would shadow it and
+      # make them (and so kdeconnect-mirror) fail to load
+      - rm -f /app/lib/libssl.so* /app/lib/libcrypto.so*
       - install -Dm644 bundle/usr/share/icons/hicolor/scalable/apps/kdeconnect.svg /app/share/icons/hicolor/scalable/apps/local.scrconnect.App.svg
       - |
         cat > /app/bin/scrconnect <<'EOS'

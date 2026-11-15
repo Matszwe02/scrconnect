@@ -210,6 +210,7 @@ public:
         : QObject(parent)
         , m_plugin(u"org.kde.kdeconnect"_s, u"/modules/kdeconnect/devices/%1/webcam"_s.arg(deviceId), u"org.kde.kdeconnect.device.webcam"_s)
         , m_spec(spec)
+        , m_name(spec.value("device"_L1).toString())
         , m_sinks(std::move(sinks))
         , m_frameSize(frameSize)
     {
@@ -236,7 +237,7 @@ private Q_SLOTS:
         if (streamId != m_streamId) {
             return;
         }
-        qInfo().noquote() << m_spec.value("device"_L1).toString() << "- the phone:" << state << message;
+        qInfo().noquote() << m_name << "- the phone:" << state << message;
         m_streamId.clear();
         m_socket.abort();
         if (state != "stopped"_L1 && state != "busy"_L1) {
@@ -275,13 +276,13 @@ private:
                                                          VideoDecoder::preferredCodec());
             if (id.isValid() && !id.value().isEmpty()) {
                 m_streamId = id.value();
-                qInfo().noquote() << m_spec.value("device"_L1).toString() << "is in use: the phone starts the camera";
+                qInfo().noquote() << m_name << "is in use: the phone starts the camera";
                 m_parser = Scrcpy::VideoParser();
                 m_decoder.close();
                 m_socket.connectToServer(u"kdeconnect-webcam-"_s + m_streamId);
             }
         } else if (!m_streamId.isEmpty() && m_lastUse.elapsed() > 5000) {
-            qInfo().noquote() << m_spec.value("device"_L1).toString() << "is no longer in use: the phone stops the camera";
+            qInfo().noquote() << m_name << "is no longer in use: the phone stops the camera";
             m_plugin.call(QDBus::NoBlock, u"stopStream"_s, std::exchange(m_streamId, {}));
             m_socket.abort();
         }
@@ -326,6 +327,7 @@ private:
 
     QDBusInterface m_plugin;
     QJsonObject m_spec;
+    QString m_name; // for the log
     std::vector<std::unique_ptr<Sink>> m_sinks;
     QSize m_frameSize;
     QTimer m_placeholderTimer;

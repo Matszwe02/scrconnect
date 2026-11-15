@@ -393,16 +393,23 @@ void MirrorWindow::sendTouch(quint8 action, QPointF position)
     }
 }
 
+// Left: touch; right: back, or the screen on; middle: home
+void MirrorWindow::mouseButton(QMouseEvent *event, bool down)
+{
+    const quint8 action = down ? Scrcpy::Android::ActionDown : Scrcpy::Android::ActionUp;
+    if (event->button() == Qt::LeftButton && (down ? pictureRect().contains(event->position()) : m_touching)) {
+        m_touching = down;
+        sendTouch(action, event->position());
+    } else if (event->button() == Qt::RightButton) {
+        send(Scrcpy::backOrScreenOn(action));
+    } else if (event->button() == Qt::MiddleButton) {
+        sendKey(Scrcpy::Android::KeycodeHome, down);
+    }
+}
+
 void MirrorWindow::mousePressEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && pictureRect().contains(event->position())) {
-        m_touching = true;
-        sendTouch(Scrcpy::Android::ActionDown, event->position());
-    } else if (event->button() == Qt::RightButton) {
-        send(Scrcpy::backOrScreenOn(Scrcpy::Android::ActionDown));
-    } else if (event->button() == Qt::MiddleButton) {
-        sendKey(Scrcpy::Android::KeycodeHome, true);
-    }
+    mouseButton(event, true);
 }
 
 void MirrorWindow::mouseMoveEvent(QMouseEvent *event)
@@ -414,14 +421,7 @@ void MirrorWindow::mouseMoveEvent(QMouseEvent *event)
 
 void MirrorWindow::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (event->button() == Qt::LeftButton && m_touching) {
-        m_touching = false;
-        sendTouch(Scrcpy::Android::ActionUp, event->position());
-    } else if (event->button() == Qt::RightButton) {
-        send(Scrcpy::backOrScreenOn(Scrcpy::Android::ActionUp));
-    } else if (event->button() == Qt::MiddleButton) {
-        sendKey(Scrcpy::Android::KeycodeHome, false);
-    }
+    mouseButton(event, false);
 }
 
 void MirrorWindow::wheelEvent(QWheelEvent *event)

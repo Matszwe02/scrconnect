@@ -38,8 +38,9 @@ object ScrcpyControl {
     private const val POINTER_ID_MOUSE = -1L
     private const val MAX_MESSAGE = 1 shl 20
 
-    fun isInput(message: ByteArray): Boolean =
-        message.isNotEmpty() && message[0].toInt() in setOf(TYPE_KEYCODE, TYPE_TEXT, TYPE_TOUCH, TYPE_SCROLL, TYPE_UHID_INPUT)
+    private val INPUT_TYPES = setOf(TYPE_KEYCODE, TYPE_TEXT, TYPE_TOUCH, TYPE_SCROLL, TYPE_UHID_INPUT)
+
+    fun isInput(message: ByteArray): Boolean = message.firstOrNull()?.toInt() in INPUT_TYPES
 
     fun isPress(message: ByteArray): Boolean = when (message.firstOrNull()?.toInt()) {
         TYPE_TEXT -> true

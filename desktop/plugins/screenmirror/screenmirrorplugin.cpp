@@ -184,6 +184,9 @@ void ScreenMirrorPlugin::receivePacket(const NetworkPacket &np)
 {
     const QString id = np.get<QString>(u"sessionId"_s);
     const auto s = m_sessions.find(id);
+    auto json = [&np](const QString &list) {
+        return QString::fromUtf8(QJsonDocument::fromVariant(np.get<QVariantList>(list)).toJson(QJsonDocument::Compact));
+    };
     if (np.type() == PACKET_TYPE_MIRROR_STATUS) {
         const QString state = np.get<QString>(u"state"_s);
         Q_EMIT statusChanged(id, state, np.get<QString>(u"message"_s));
@@ -191,11 +194,9 @@ void ScreenMirrorPlugin::receivePacket(const NetworkPacket &np)
             destroySession(id, false);
         }
     } else if (np.type() == PACKET_TYPE_MIRROR_APPS) {
-        const QVariantList apps = np.get<QVariantList>(u"apps"_s);
-        Q_EMIT appsReceived(QString::fromUtf8(QJsonDocument::fromVariant(apps).toJson(QJsonDocument::Compact)));
+        Q_EMIT appsReceived(json(u"apps"_s));
     } else if (np.type() == PACKET_TYPE_MIRROR_ICONS) {
-        const QVariantList icons = np.get<QVariantList>(u"icons"_s);
-        Q_EMIT iconsReceived(QString::fromUtf8(QJsonDocument::fromVariant(icons).toJson(QJsonDocument::Compact)));
+        Q_EMIT iconsReceived(json(u"icons"_s));
     } else if (s == m_sessions.end() || !np.payload()) {
         return;
     } else if (np.type() == PACKET_TYPE_MIRROR_VIDEO) {

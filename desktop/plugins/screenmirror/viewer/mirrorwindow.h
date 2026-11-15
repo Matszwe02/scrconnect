@@ -74,6 +74,7 @@ private:
     void send(const QByteArray &message);
     void sendKey(int keycode, bool down, int meta = 0);
     void sendTouch(quint8 action, QPointF position);
+    void mouseButton(QMouseEvent *event, bool down);
     void setScreenOff(bool off);
     void fitToPicture();
     void sendDisplaySize();

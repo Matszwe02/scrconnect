@@ -17,6 +17,7 @@ import java.security.SecureRandom
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 /**
@@ -52,8 +53,7 @@ class ScrcpySession(
     private val exited = CountDownLatch(1)
     private val output = StringBuilder()
 
-    @Volatile
-    private var closed = false
+    private val closed = AtomicBoolean()
 
     lateinit var videoInput: InputStream
         private set
@@ -76,15 +76,10 @@ class ScrcpySession(
             serverStream = server
             thread(isDaemon = true, name = "scrcpy-server") { readOutput(server.openInputStream()) }
             // The server accepts the enabled sockets in this order; the first one starts with a dummy byte
-            val sockets = listOf(video, audio, control).count { it }
-            val opened = List(sockets) { i -> openSocket(expectDummyByte = i == 0) }
-            var i = 0
-            if (video) videoInput = opened[i++].openInputStream()
-            if (audio) audioInput = opened[i++].openInputStream()
-            if (control) {
-                controlStream = opened[i]
-                controlInput = opened[i].openInputStream()
-            }
+            val opened = List(listOf(video, audio, control).count { it }) { i -> openSocket(expectDummyByte = i == 0) }.iterator()
+            if (video) videoInput = opened.next().openInputStream()
+            if (audio) audioInput = opened.next().openInputStream()
+            if (control) controlInput = opened.next().also { controlStream = it }.openInputStream()
         } catch (e: Exception) {
             close()
             throw e as? IOException ?: IOException(e)
@@ -93,7 +88,7 @@ class ScrcpySession(
 
     private fun track(stream: AdbStream): AdbStream {
         streams += stream
-        if (closed) {
+        if (closed.get()) {
             stream.close()
             throw IOException("Session closed")
         }
@@ -102,7 +97,7 @@ class ScrcpySession(
 
     private fun openSocket(expectDummyByte: Boolean): AdbStream {
         repeat(50) {
-            if (closed) throw IOException("Session closed")
+            if (closed.get()) throw IOException("Session closed")
             val stream = runCatching { SelfAdb.open(context, "localabstract:scrcpy_$scid") }.getOrNull()
             if (stream != null && (!expectDummyByte || runCatching { stream.openInputStream().read() >= 0 }.getOrDefault(false))) {
                 return track(stream)
@@ -149,7 +144,7 @@ class ScrcpySession(
 
     @Throws(IOException::class)
     fun send(message: ByteArray) {
-        val stream = controlStream?.takeIf { !closed } ?: throw IOException("No control socket")
+        val stream = controlStream?.takeIf { !closed.get() } ?: throw IOException("No control socket")
         synchronized(stream) {
             stream.write(message, 0, message.size)
             stream.flush()
@@ -157,8 +152,7 @@ class ScrcpySession(
     }
 
     override fun close() {
-        if (closed) return
-        closed = true
+        if (closed.getAndSet(true)) return
         streams.filter { it !== serverStream }.forEach { runCatching { it.close() } }
         thread(isDaemon = true) {
             if (!awaitExit(1000)) {

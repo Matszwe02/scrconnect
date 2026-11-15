@@ -33,6 +33,7 @@
 #include <sys/ioctl.h>
 #include <sys/prctl.h>
 #include <unistd.h>
+#include <vector>
 
 #include "../../screenmirror/scrcpyprotocol.h"
 #include "../../screenmirror/videodecoder.h"
@@ -181,31 +182,6 @@ private:
     quint32 m_streamingApps = 0;
 };
 
-// PipeWire looks at a v4l2loopback device only when it appears, before it is a camera (exclusive_caps): apps that take
-// their cameras from PipeWire would not see it, so a PipeWire camera shows the same picture
-class BothSinks : public Sink
-{
-public:
-    BothSinks(std::unique_ptr<Sink> v4l2, std::unique_ptr<Sink> pipeWire)
-        : m_v4l2(std::move(v4l2))
-        , m_pipeWire(std::move(pipeWire))
-    {
-    }
-    void write(const QByteArray &frame) override
-    {
-        m_v4l2->write(frame);
-        m_pipeWire->write(frame);
-    }
-    bool inUse() override
-    {
-        return m_v4l2->inUse() | m_pipeWire->inUse();
-    }
-
-private:
-    std::unique_ptr<Sink> m_v4l2;
-    std::unique_ptr<Sink> m_pipeWire;
-};
-
 // 0xffRRGGBB pixels to packed YUYV, BT.601 limited range
 QByteArray toYuyv(const QImage &image)
 {
@@ -230,11 +206,11 @@ class Camera : public QObject
 {
     Q_OBJECT
 public:
-    Camera(const QString &deviceId, const QJsonObject &spec, std::unique_ptr<Sink> sink, QSize frameSize, QObject *parent)
+    Camera(const QString &deviceId, const QJsonObject &spec, std::vector<std::unique_ptr<Sink>> sinks, QSize frameSize, QObject *parent)
         : QObject(parent)
         , m_plugin(u"org.kde.kdeconnect"_s, u"/modules/kdeconnect/devices/%1/webcam"_s.arg(deviceId), u"org.kde.kdeconnect.device.webcam"_s)
         , m_spec(spec)
-        , m_sink(std::move(sink))
+        , m_sinks(std::move(sinks))
         , m_frameSize(frameSize)
     {
         QDBusConnection::sessionBus().connect(m_plugin.service(), m_plugin.path(), m_plugin.interface(), u"statusChanged"_s, this, SLOT(onStatus(QString, QString, QString)));
@@ -243,14 +219,10 @@ public:
             m_streamId.clear();
         });
         // Black until the video comes: an app that gets no picture may give up
-        m_black.resize(qsizetype(frameSize.width()) * frameSize.height() * 2);
-        for (qsizetype i = 0; i < m_black.size(); i += 2) {
-            m_black[i] = 16;
-            m_black[i + 1] = char(128);
-        }
+        m_black = QByteArray("\x10\x80", 2).repeated(qsizetype(frameSize.width()) * frameSize.height());
         connect(&m_placeholderTimer, &QTimer::timeout, this, [this] {
             if (!m_lastFrame.isValid() || m_lastFrame.elapsed() > 700) {
-                m_sink->write(m_black);
+                write(m_black);
             }
         });
         m_placeholderTimer.start(200);
@@ -278,10 +250,20 @@ private:
         return m_failure.isValid() && m_failure.elapsed() < 15000;
     }
 
+    void write(const QByteArray &frame)
+    {
+        for (const auto &sink : m_sinks) {
+            sink->write(frame);
+        }
+    }
+
     // Starts the stream when an app opens the camera twice in a row (listing the cameras is no use), stops it when unused
     void poll()
     {
-        const bool inUse = m_sink->inUse();
+        bool inUse = false;
+        for (const auto &sink : m_sinks) {
+            inUse |= sink->inUse(); // every sink is asked: that is also how it keeps track
+        }
         if (inUse) {
             m_lastUse.start();
         }
@@ -339,12 +321,12 @@ private:
             const QImage scaled = picture.scaled(m_frameSize, Qt::KeepAspectRatio, Qt::FastTransformation);
             QPainter(&frame).drawImage((m_frameSize.width() - scaled.width()) / 2, (m_frameSize.height() - scaled.height()) / 2, scaled);
         }
-        m_sink->write(toYuyv(frame.convertToFormat(QImage::Format_RGB32)));
+        write(toYuyv(frame.convertToFormat(QImage::Format_RGB32)));
     }
 
     QDBusInterface m_plugin;
     QJsonObject m_spec;
-    std::unique_ptr<Sink> m_sink;
+    std::vector<std::unique_ptr<Sink>> m_sinks;
     QSize m_frameSize;
     QTimer m_placeholderTimer;
     QTimer m_pollTimer;
@@ -360,11 +342,6 @@ private:
     QImage m_picture;
 };
 
-bool inFlatpak()
-{
-    return QFileInfo::exists(u"/.flatpak-info"_s);
-}
-
 const QString kSetupScript = uR"(
 PATH=/usr/sbin:/sbin:/usr/bin:/bin:$PATH
 printf '%s\n' 'options v4l2loopback devices=2 video_nr=40,41 card_label="Phone front camera,Phone back camera" exclusive_caps=1,1' > /etc/modprobe.d/kdeconnect-webcam.conf
@@ -376,7 +353,7 @@ modprobe v4l2loopback && grep -qx 'Phone front camera' /sys/class/video4linux/*/
 int setup()
 {
     const QStringList command{u"pkexec"_s, u"sh"_s, u"-c"_s, kSetupScript};
-    return inFlatpak() ? QProcess::execute(u"flatpak-spawn"_s, QStringList{u"--host"_s} + command) : QProcess::execute(command.first(), command.mid(1));
+    return QFileInfo::exists(u"/.flatpak-info"_s) ? QProcess::execute(u"flatpak-spawn"_s, QStringList{u"--host"_s} + command) : QProcess::execute(command.first(), command.mid(1));
 }
 }
 
@@ -413,26 +390,26 @@ int main(int argc, char **argv)
             continue;
         }
         auto attach = [=, &app](bool quiet) {
-            std::unique_ptr<Sink> sink;
+            std::vector<std::unique_ptr<Sink>> sinks;
             if (backend != "pipewire"_L1) {
                 bool exists = false;
-                sink = V4l2Sink::open(spec.value("device"_L1).toString(), size.width(), size.height(), &exists, quiet);
-                if (!sink && exists) {
+                if (auto v4l2 = V4l2Sink::open(spec.value("device"_L1).toString(), size.width(), size.height(), &exists, quiet)) {
+                    sinks.push_back(std::move(v4l2));
+                } else if (exists) {
                     return Refused;
                 }
             }
-            if (sink || backend != "v4l2loopback"_L1) {
-                auto pipeWire = PipeWireSink::open(u"kdeconnect-webcam-%1-%2"_s.arg(deviceId, spec.value("id"_L1).toString()), spec.value("label"_L1).toString(), size);
-                if (sink && pipeWire) {
-                    sink = std::make_unique<BothSinks>(std::move(sink), std::move(pipeWire));
-                } else if (!sink) {
-                    sink = std::move(pipeWire);
+            // PipeWire looks at a v4l2loopback device only when it appears, before it is a camera (exclusive_caps): apps that
+            // take their cameras from PipeWire would not see it, so a PipeWire camera shows the same picture
+            if (!sinks.empty() || backend != "v4l2loopback"_L1) {
+                if (auto pipeWire = PipeWireSink::open(u"kdeconnect-webcam-%1-%2"_s.arg(deviceId, spec.value("id"_L1).toString()), spec.value("label"_L1).toString(), size)) {
+                    sinks.push_back(std::move(pipeWire));
                 }
             }
-            if (!sink) {
+            if (sinks.empty()) {
                 return NoSink;
             }
-            new Camera(deviceId, spec, std::move(sink), size, &app);
+            new Camera(deviceId, spec, std::move(sinks), size, &app);
             return Done;
         };
         const Attached attached = attach(false);

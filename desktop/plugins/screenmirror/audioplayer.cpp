@@ -14,10 +14,7 @@
 
 using namespace Qt::StringLiterals;
 
-namespace
-{
-constexpr qint64 kMaxPending = 1 << 18; // about 1.4 s of audio waiting for the helper
-}
+static constexpr qint64 kMaxPending = 1 << 18; // about 1.4 s of audio waiting for the helper
 
 AudioPlayer::AudioPlayer(const QSharedPointer<QIODevice> &stream, QObject *parent)
     : QObject(parent)

@@ -18,6 +18,7 @@
 #include <linux/input-event-codes.h>
 
 #include <algorithm>
+#include <iterator>
 
 using namespace Qt::StringLiterals;
 
@@ -31,12 +32,9 @@ double fp3232(const xcb_input_fp3232_t &v)
 }
 
 template<typename T>
-using Reply = std::unique_ptr<T, decltype(&free)>;
-
-template<typename T>
-Reply<T> reply(T *r)
+auto reply(T *r)
 {
-    return Reply<T>(r, &free);
+    return std::unique_ptr<T, decltype(&free)>(r, &free);
 }
 
 /** The ranges of a monitor's edge that do not touch another monitor, as [from, to) along the edge. */
@@ -83,7 +81,7 @@ bool X11InputCapture::isUsable()
     xcb_connection_t *c = xcb_connect(nullptr, nullptr);
     const auto fixes = reply(xcb_xfixes_query_version_reply(c, xcb_xfixes_query_version(c, 5, 0), nullptr));
     const auto xi = reply(xcb_input_xi_query_version_reply(c, xcb_input_xi_query_version(c, 2, 3), nullptr));
-    const bool usable = fixes && xi && fixes->major_version >= 5 && (xi->major_version > 2 || xi->minor_version >= 3);
+    const bool usable = fixes && xi && fixes->major_version >= 5 && (xi->major_version > 2 || (xi->major_version == 2 && xi->minor_version >= 3));
     xcb_disconnect(c);
     return usable;
 }
@@ -326,30 +324,13 @@ void X11InputCapture::release(const QPointF &position)
 
 void X11InputCapture::rawButton(uint32_t button, bool pressed)
 {
-    switch (button) {
-    case 1:
-        Q_EMIT mouseButton(BTN_LEFT, pressed);
-        break;
-    case 2:
-        Q_EMIT mouseButton(BTN_MIDDLE, pressed);
-        break;
-    case 3:
-        Q_EMIT mouseButton(BTN_RIGHT, pressed);
-        break;
-    case 4: // wheel up, down, left, right: 120 per notch like libei, positive = down / right
-    case 5:
-    case 6:
-    case 7:
+    static constexpr int codes[] = {0, BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, 0, 0, 0, 0, BTN_SIDE, BTN_EXTRA};
+    if (button >= 4 && button <= 7) { // wheel up, down, left, right: 120 per notch like libei, positive = down / right
         if (pressed) {
             Q_EMIT scrollDiscrete(button == 6 ? -120 : button == 7 ? 120 : 0, button == 4 ? -120 : button == 5 ? 120 : 0);
         }
-        break;
-    case 8:
-        Q_EMIT mouseButton(BTN_SIDE, pressed);
-        break;
-    case 9:
-        Q_EMIT mouseButton(BTN_EXTRA, pressed);
-        break;
+    } else if (button < std::size(codes) && codes[button]) {
+        Q_EMIT mouseButton(codes[button], pressed);
     }
 }
 

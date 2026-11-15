@@ -34,10 +34,7 @@ const AVCodec *findDecoder(Scrcpy::Codec codec)
 
 QString VideoDecoder::preferredCodec()
 {
-    if (findDecoder(Scrcpy::Codec::H264)) {
-        return QStringLiteral("h264");
-    }
-    return findDecoder(Scrcpy::Codec::H265) ? QStringLiteral("h265") : QStringLiteral("av1");
+    return QLatin1String(findDecoder(Scrcpy::Codec::H264) ? "h264" : findDecoder(Scrcpy::Codec::H265) ? "h265" : "av1");
 }
 
 bool VideoDecoder::open(Scrcpy::Codec codec)

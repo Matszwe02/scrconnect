@@ -74,7 +74,7 @@ class ShellInput(context: Context, private val exitEdge: Int, along: Float, priv
     }
 
     fun end() {
-        if (buttons and ScrcpyControl.BUTTON_PRIMARY != 0) button(BTN_LEFT, false)
+        if (dragging) button(BTN_LEFT, false)
         if (buttons and ScrcpyControl.BUTTON_SECONDARY != 0) button(BTN_RIGHT, false)
         if (pressed.isNotEmpty() || modifiers.any { it }) {
             pressed.clear()
@@ -114,11 +114,7 @@ class ShellInput(context: Context, private val exitEdge: Int, along: Float, priv
             BTN_LEFT -> ScrcpyControl.BUTTON_PRIMARY
             BTN_RIGHT -> ScrcpyControl.BUTTON_SECONDARY
             else -> {
-                when (code) {
-                    BTN_MIDDLE -> key(KEYCODE_HOME, down)
-                    BTN_SIDE -> key(KEYCODE_BACK, down)
-                    BTN_EXTRA -> key(KEYCODE_APP_SWITCH, down)
-                }
+                NAVIGATION_KEYS[code]?.let { key(it, down) }
                 return
             }
         }
@@ -178,9 +174,7 @@ class ShellInput(context: Context, private val exitEdge: Int, along: Float, priv
         const val BTN_SIDE = 0x113
         const val BTN_EXTRA = 0x114
 
-        private const val KEYCODE_HOME = 3
-        private const val KEYCODE_BACK = 4
-        private const val KEYCODE_APP_SWITCH = 187
+        private val NAVIGATION_KEYS = mapOf(BTN_MIDDLE to 3, BTN_SIDE to 4, BTN_EXTRA to 187) // KEYCODE_HOME, _BACK, _APP_SWITCH
         private const val KEYBOARD_ID = 0x4b43
         private const val PREF_LAYOUT_HINT = "shellinput_keyboard_hint_shown"
 

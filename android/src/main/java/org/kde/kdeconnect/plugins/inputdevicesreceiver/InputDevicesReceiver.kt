@@ -108,7 +108,7 @@ class InputDevicesReceiverPlugin : Plugin() {
             np.has("dx") -> input.move(np.getDouble("dx").toFloat(), np.getDouble("dy", 0.0).toFloat())?.let { along ->
                 // Pushed back out through the entry edge: return the pointer at once
                 lastAlong = along.toDouble()
-                releaseAlong()
+                release(0, 0, along = lastAlong)
                 // Finding the app takes shell commands, which must not hold up this thread: it handles every packet
                 if (input.dragging) {
                     device.getPlugin<ScreenMirrorPlugin>()?.offerHandoff { packageName, taskId, label ->
@@ -130,9 +130,11 @@ class InputDevicesReceiverPlugin : Plugin() {
             .getRealMetrics(metrics)
     }
 
-    private fun release(dx: Int, dy: Int, reason: String? = null) {
+    /** With [along], the pointer goes back there along the computer's edge, independent of the screen sizes. */
+    private fun release(dx: Int, dy: Int, reason: String? = null, along: Double? = null) {
         val np = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
         reason?.let { np["reason"] = it }
+        along?.let { np["releaseAlong"] = it }
 
         np["releaseDeltax"] = dx
         np["releaseDeltay"] = dy
@@ -141,16 +143,6 @@ class InputDevicesReceiverPlugin : Plugin() {
         device.sendPacket(np)
         Cursor.enterEdge = NONE_EDGE
         KdeConnectAccessibilityService.instance?.hideCursorNow()
-    }
-
-    /** Gives the pointer back at [lastAlong] along the computer's edge, independent of the screen sizes. */
-    private fun releaseAlong() {
-        val np = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
-        np["releaseAlong"] = lastAlong
-        np["releaseDeltax"] = 0
-        np["releaseDeltay"] = 0
-        lastReleaseAt = SystemClock.elapsedRealtime()
-        device.sendPacket(np)
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
@@ -167,7 +159,7 @@ class InputDevicesReceiverPlugin : Plugin() {
         if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST && moddedComputer && Cursor.enterEdge == NONE_EDGE) {
             // The computer may still hold the pointer captured (a lost release): hand it back again, but not right after a
             // release, while earlier input is still on its way
-            if (SystemClock.elapsedRealtime() - lastReleaseAt > RECLAIM_AFTER_MS) releaseAlong()
+            if (SystemClock.elapsedRealtime() - lastReleaseAt > RECLAIM_AFTER_MS) release(0, 0, along = lastAlong)
             return true
         }
 

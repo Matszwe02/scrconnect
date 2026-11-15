@@ -35,10 +35,7 @@ using namespace Qt::StringLiterals;
 
 K_PLUGIN_CLASS_WITH_JSON(ScreenMirrorPlugin, "kdeconnect_screenmirror.json")
 
-namespace
-{
-constexpr qsizetype kMaxControlChunk = 32 * 1024;
-}
+static constexpr qsizetype kMaxControlChunk = 32 * 1024;
 
 ScreenMirrorPlugin::~ScreenMirrorPlugin()
 {

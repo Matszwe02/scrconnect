@@ -30,6 +30,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -153,16 +154,10 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
     /** Input for a dark app window is dropped; a press wakes it instead. */
     private fun control(id: String, data: ByteArray) {
         val live = sessions[id] ?: return
-        if (!live.app || !OWN_DISPLAY_POWER) {
-            send(id, data)
-            return
-        }
+        if (!live.app || !OWN_DISPLAY_POWER) return send(id, data)
         val messages = live.controlSplitter.push(data)
         val display = live.session.displayId
-        if (!live.controlSplitter.splitting || display == null || !displayOff(display)) {
-            messages.forEach { send(id, it) }
-            return
-        }
+        if (!live.controlSplitter.splitting || display == null || !displayOff(display)) return messages.forEach { send(id, it) }
         var pressed = false
         for (message in messages) {
             if (!ScrcpyControl.isInput(message)) {
@@ -222,24 +217,18 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
             .map { it.activityInfo.applicationInfo }
             .distinctBy { it.packageName }
             .filter { it.packageName != context.packageName }
-        if (iconsFor == null) {
-            val np = NetworkPacket(APPS)
-            np["apps"] = buildJsonArray {
-                apps.forEach {
-                    add(buildJsonObject {
-                        put("label", it.loadLabel(pm).toString())
-                        put("package", it.packageName)
-                        put("system", it.flags and ApplicationInfo.FLAG_SYSTEM != 0)
-                    })
-                }
-            }
+        fun packet(type: String, key: String, list: List<ApplicationInfo>, entry: JsonObjectBuilder.(ApplicationInfo) -> Unit) {
+            val np = NetworkPacket(type)
+            np[key] = buildJsonArray { list.forEach { add(buildJsonObject { put("package", it.packageName); entry(it) }) } }
             device.sendPacket(np)
-            return
         }
-        for (batch in apps.filter { it.packageName in iconsFor }.chunked(20)) {
-            val np = NetworkPacket(ICONS)
-            np["icons"] = buildJsonArray { batch.forEach { add(buildJsonObject { put("package", it.packageName); put("icon", icon(it)) }) } }
-            device.sendPacket(np)
+        if (iconsFor == null) {
+            packet(APPS, "apps", apps) {
+                put("label", it.loadLabel(pm).toString())
+                put("system", it.flags and ApplicationInfo.FLAG_SYSTEM != 0)
+            }
+        } else {
+            apps.filter { it.packageName in iconsFor }.chunked(20).forEach { batch -> packet(ICONS, "icons", batch) { put("icon", icon(it)) } }
         }
     }
 
@@ -255,18 +244,12 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
     private fun start(id: String, np: NetworkPacket) {
         if (id.isEmpty()) return
         val step = SelfAdb.step(context)
-        if (step != SelfAdb.Step.DONE) {
-            status(id, STATE_NEEDS_SETUP, context.getString(step.text))
-            return
-        }
+        if (step != SelfAdb.Step.DONE) return status(id, STATE_NEEDS_SETUP, context.getString(step.text))
         val app = np.getString("mode", "screen") == "app"
         val pkg = np.getStringOrNull("package")?.takeIf(ScrcpySession::isValidPackageName)
         val notificationId = np.getStringOrNull("notificationId")?.takeIf { it.isNotEmpty() }
         val handoff = np.getBoolean("handoff", false)
-        if (app && pkg == null && notificationId == null) {
-            status(id, STATE_ERROR, "Invalid app")
-            return
-        }
+        if (app && pkg == null && notificationId == null) return status(id, STATE_ERROR, "Invalid app")
         // Android 13+ app windows capture only their own app's sound; otherwise the phone's whole output
         val audio = np.getBoolean("audio", false)
         val ownAppAudio = audio && app && Build.VERSION.SDK_INT >= 33
@@ -292,8 +275,7 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
         try {
             session.start()
         } catch (e: Exception) {
-            status(id, STATE_ERROR, e.message)
-            return
+            return status(id, STATE_ERROR, e.message)
         }
         val handoffTask = lastForeground?.takeIf { handoff && it.id == np.getInt("handoffTaskId", -1) }
         val live = Live(session, pkg, handoffTask, app)
@@ -326,7 +308,8 @@ class ScreenMirrorPlugin : ScrcpyPlugin() {
                 val uid = context.packageManager.getApplicationInfo(pkg, 0).uid
                 val capture = SelfAdb.open(context, "exec:" + AppAudioCapture.command(context, uid))
                 live.appAudio = capture
-                relay(AUDIO, id, capture.openInputStream())
+                // Also when a stop came in between: the capture would go on, keeping the app silent on the phone
+                relay(AUDIO, id, capture.openInputStream()) { runCatching { capture.close() } }
             }
         }
         if (app && OWN_DISPLAY_POWER) executor.execute { session.awaitDisplayId()?.takeIf(::displayOff)?.let { wake(id, live) } }

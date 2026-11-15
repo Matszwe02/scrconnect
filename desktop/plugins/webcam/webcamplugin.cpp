@@ -34,14 +34,6 @@ using namespace Qt::StringLiterals;
 
 K_PLUGIN_CLASS_WITH_JSON(WebcamPlugin, "kdeconnect_webcam.json")
 
-namespace
-{
-QString flatpakSetupCommand()
-{
-    return u"flatpak run --command=/app/run.sh %1 kdeconnect-webcam --setup-script | sudo sh"_s.arg(qEnvironmentVariable("FLATPAK_ID"));
-}
-}
-
 WebcamPlugin::WebcamPlugin(QObject *parent, const QVariantList &args)
     : KdeConnectPlugin(parent, args)
 {
@@ -84,6 +76,7 @@ void WebcamPlugin::setupVirtualCameras()
     connect(setup, &QProcess::finished, this, [this, setup](int code, QProcess::ExitStatus status) {
         setup->deleteLater();
         const bool ok = status == QProcess::NormalExit && code == 0;
+        const QString flatpak = u"flatpak run --command=/app/run.sh %1 kdeconnect-webcam --setup-script | sudo sh"_s.arg(qEnvironmentVariable("FLATPAK_ID"));
         const QString failure = i18n(
             "The virtual cameras could not be set up. They need the v4l2loopback kernel module (package v4l2loopback-dkms, v4l2loopback or "
             "linux-modules-extra; with Secure Boot it must be signed) and administrator rights.");
@@ -91,7 +84,7 @@ void WebcamPlugin::setupVirtualCameras()
                                                    i18n("Camera sharing"),
                                                    ok ? i18n("The virtual cameras are ready.")
                                                       : QFile::exists(u"/.flatpak-info"_s)
-                                                      ? failure + u' ' + i18n("Or run in a terminal: %1", flatpakSetupCommand())
+                                                      ? failure + u' ' + i18n("Or run in a terminal: %1", flatpak)
                                                       : failure + u' ' + i18n("Without a password dialog, run \"sudo kdeconnect-webcam --setup\"."),
                                                    u"camera-web"_s);
         Q_EMIT virtualCamerasChanged();

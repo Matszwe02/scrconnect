@@ -11,10 +11,7 @@
 #include <QLocalSocket>
 #include <QStandardPaths>
 
-namespace
-{
-constexpr qsizetype kMaxPending = 64 * 1024 * 1024;
-}
+static constexpr qsizetype kMaxPending = 64 * 1024 * 1024;
 
 StreamRelay::StreamRelay(const QString &name, QObject *parent)
     : QObject(parent)

@@ -53,8 +53,7 @@ object SelfAdb {
     private const val TCP_PORT = 5555
 
     private class Manager(context: Context) : AbsAdbConnectionManager() {
-        private val key: PrivateKey
-        private val cert: Certificate
+        private val identity: Pair<PrivateKey, Certificate>
 
         init {
             setApi(Build.VERSION.SDK_INT)
@@ -63,14 +62,10 @@ object SelfAdb {
             setThrowOnUnauthorised(true)
             val keyFile = File(context.filesDir, "mirror/adb_key.pk8")
             val certFile = File(context.filesDir, "mirror/adb_cert.der")
-            val stored = runCatching {
-                KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes())) to
-                    CertificateFactory.getInstance("X.509").generateCertificate(certFile.inputStream())
-            }.getOrNull()
-            if (stored != null) {
-                key = stored.first
-                cert = stored.second
-            } else {
+            fun certificate(der: ByteArray) = CertificateFactory.getInstance("X.509").generateCertificate(der.inputStream())
+            identity = runCatching {
+                KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes())) to certificate(certFile.readBytes())
+            }.getOrElse {
                 val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
                 val name = X500Name("CN=KDE Connect")
                 val now = System.currentTimeMillis()
@@ -79,13 +74,12 @@ object SelfAdb {
                 keyFile.parentFile?.mkdirs()
                 keyFile.writeBytes(pair.private.encoded)
                 certFile.writeBytes(certBytes)
-                key = pair.private
-                cert = CertificateFactory.getInstance("X.509").generateCertificate(certBytes.inputStream())
+                pair.private to certificate(certBytes)
             }
         }
 
-        override fun getPrivateKey() = key
-        override fun getCertificate() = cert
+        override fun getPrivateKey() = identity.first
+        override fun getCertificate() = identity.second
         override fun getDeviceName() = "SCR Connect"
     }
 
@@ -134,8 +128,7 @@ object SelfAdb {
     }
 
     private fun connectTls(context: Context, m: Manager): Boolean {
-        val attempts = if (enableDebugging(context)) 3 else 1
-        repeat(attempts) { attempt ->
+        repeat(if (enableDebugging(context)) 3 else 1) { attempt ->
             if (attempt > 0) Thread.sleep(1000)
             if (runCatching { m.connectTls(context, 5000) }.getOrDefault(false)) return true
         }
@@ -219,13 +212,8 @@ object SelfAdb {
     // libadb ends a finished stream with IOException("Stream closed") instead of -1
     fun readAll(input: InputStream): ByteArray {
         val out = ByteArrayOutputStream()
-        val buf = ByteArray(8192)
         try {
-            while (true) {
-                val n = input.read(buf)
-                if (n < 0) break
-                out.write(buf, 0, n)
-            }
+            input.copyTo(out)
         } catch (e: IOException) {
             if (e.message?.startsWith("Stream closed") != true) throw e
         }

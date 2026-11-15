@@ -24,30 +24,34 @@ quint32 u32(const QByteArray &b, qsizetype at)
     return qFromBigEndian<quint32>(b.constData() + at);
 }
 
-template<typename F>
-QByteArray message(quint8 type, F write)
+struct Position {
+    QPoint point;
+    QSize frame;
+};
+
+QDataStream &operator<<(QDataStream &out, const Position &p)
+{
+    return out << qint32(p.point.x()) << qint32(p.point.y()) << quint16(p.frame.width()) << quint16(p.frame.height());
+}
+
+struct Utf8 { // a length, then the bytes
+    QByteArray bytes;
+};
+
+QDataStream &operator<<(QDataStream &out, const Utf8 &s)
+{
+    out << quint32(s.bytes.size());
+    out.writeRawData(s.bytes.constData(), int(s.bytes.size()));
+    return out;
+}
+
+template<typename... Fields>
+QByteArray message(quint8 type, const Fields &...fields)
 {
     QByteArray bytes;
     QDataStream out(&bytes, QIODevice::WriteOnly);
-    out << type;
-    write(out);
+    ((out << type) << ... << fields);
     return bytes;
-}
-
-QByteArray message(quint8 type)
-{
-    return QByteArray(1, char(type));
-}
-
-void writePosition(QDataStream &out, QPoint position, QSize frameSize)
-{
-    out << qint32(position.x()) << qint32(position.y()) << quint16(frameSize.width()) << quint16(frameSize.height());
-}
-
-void writeString(QDataStream &out, const QByteArray &utf8)
-{
-    out << quint32(utf8.size());
-    out.writeRawData(utf8.constData(), int(utf8.size()));
 }
 }
 
@@ -68,16 +72,17 @@ QList<VideoEvent> VideoParser::push(const QByteArray &data)
         m_buffer.clear();
         pos = 0;
     };
+    auto add = [&events](VideoEvent::Type type) -> VideoEvent & {
+        events.emplaceBack().type = type;
+        return events.last();
+    };
     while (m_state != Failed) {
         if (m_state == Name) {
             if (available() < kDeviceNameLength) {
                 break;
             }
             const QByteArray name = m_buffer.mid(pos, kDeviceNameLength);
-            VideoEvent event;
-            event.type = VideoEvent::DeviceName;
-            event.name = QString::fromUtf8(name.left(name.indexOf('\0')));
-            events.append(event);
+            add(VideoEvent::DeviceName).name = QString::fromUtf8(name.left(name.indexOf('\0')));
             pos += kDeviceNameLength;
             m_state = CodecHeader;
         } else if (m_state == CodecHeader) {
@@ -91,10 +96,7 @@ QList<VideoEvent> VideoParser::push(const QByteArray &data)
                 fail(id <= 1 ? QStringLiteral("The phone could not capture video") : QStringLiteral("Unknown video codec"));
                 break;
             }
-            VideoEvent event;
-            event.type = VideoEvent::CodecId;
-            event.codec = codec;
-            events.append(event);
+            add(VideoEvent::CodecId).codec = codec;
             m_state = FrameHeader;
         } else if (m_state == FrameHeader) {
             if (available() < 12) {
@@ -104,10 +106,7 @@ QList<VideoEvent> VideoParser::push(const QByteArray &data)
             const quint32 size = u32(m_buffer, pos + 8);
             pos += 12;
             if (head & (1ULL << 63)) { // session packet: the new frame size follows
-                VideoEvent event;
-                event.type = VideoEvent::Size;
-                event.size = QSize(int(head & 0xffffffff), int(size));
-                events.append(event);
+                add(VideoEvent::Size).size = QSize(int(head & 0xffffffff), int(size));
             } else if (size > kMaxFrameSize) {
                 fail(QStringLiteral("Video frame too large"));
             } else {
@@ -133,9 +132,7 @@ QList<VideoEvent> VideoParser::push(const QByteArray &data)
 
 QByteArray injectKeycode(quint8 action, int keycode, int metaState)
 {
-    return message(0, [&](QDataStream &out) {
-        out << action << qint32(keycode) << qint32(0) << qint32(metaState);
-    });
+    return message(0, action, qint32(keycode), qint32(0), qint32(metaState));
 }
 
 QByteArray injectText(const QString &text)
@@ -145,19 +142,14 @@ QByteArray injectText(const QString &text)
     while (length > 0 && length < utf8.size() && (quint8(utf8[length]) & 0xC0) == 0x80) {
         --length;
     }
-    return message(1, [&](QDataStream &out) {
-        writeString(out, utf8.left(length));
-    });
+    return message(1, Utf8{utf8.left(length)});
 }
 
 QByteArray injectTouch(quint8 action, QPoint position, QSize frameSize)
 {
     const bool pressed = action != Android::ActionUp;
-    return message(2, [&](QDataStream &out) {
-        out << action << quint64(-2); // pointer id: generic finger
-        writePosition(out, position, frameSize);
-        out << quint16(pressed ? 0xffff : 0) << qint32(0) << qint32(pressed ? 1 : 0);
-    });
+    // pointer id: generic finger
+    return message(2, action, quint64(-2), Position{position, frameSize}, quint16(pressed ? 0xffff : 0), qint32(0), qint32(pressed ? 1 : 0));
 }
 
 QByteArray injectScroll(QPoint position, QSize frameSize, float h, float v)
@@ -165,17 +157,12 @@ QByteArray injectScroll(QPoint position, QSize frameSize, float h, float v)
     auto fixed = [](float notches) {
         return qint16(std::clamp(notches / 16.0f, -1.0f, 1.0f) * 0x7fff);
     };
-    return message(3, [&](QDataStream &out) {
-        writePosition(out, position, frameSize);
-        out << fixed(h) << fixed(v) << qint32(0);
-    });
+    return message(3, Position{position, frameSize}, fixed(h), fixed(v), qint32(0));
 }
 
 QByteArray backOrScreenOn(quint8 action)
 {
-    return message(4, [&](QDataStream &out) {
-        out << action;
-    });
+    return message(4, action);
 }
 
 QByteArray expandNotificationPanel()
@@ -190,17 +177,12 @@ QByteArray collapsePanels()
 
 QByteArray pasteText(const QString &text)
 {
-    return message(9, [&](QDataStream &out) {
-        out << quint64(0) << quint8(true); // sequence 0: no acknowledgement
-        writeString(out, text.toUtf8());
-    });
+    return message(9, quint64(0), quint8(true), Utf8{text.toUtf8()}); // sequence 0: no acknowledgement
 }
 
 QByteArray setScreenPower(bool on)
 {
-    return message(10, [&](QDataStream &out) {
-        out << quint8(on);
-    });
+    return message(10, quint8(on));
 }
 
 QByteArray resetVideo()
@@ -210,8 +192,6 @@ QByteArray resetVideo()
 
 QByteArray resizeDisplay(QSize size)
 {
-    return message(21, [&](QDataStream &out) {
-        out << quint16(size.width()) << quint16(size.height());
-    });
+    return message(21, quint16(size.width()), quint16(size.height()));
 }
 }

@@ -62,7 +62,8 @@ class WebcamPlugin : ScrcpyPlugin() {
     private val cameras get() = context.getSystemService(CameraManager::class.java)
     private val streams = ConcurrentHashMap<String, Stream>()
 
-    private val stopped = ConcurrentHashMap.newKeySet<String>()
+    // Starts that are queued or running: a stop takes its stream out
+    private val pending = ConcurrentHashMap.newKeySet<String>()
 
     // One start at a time: apps often open both cameras at once, and two starts would take each other's camera
     private val starter = Executors.newSingleThreadExecutor()
@@ -85,19 +86,20 @@ class WebcamPlugin : ScrcpyPlugin() {
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
+        val id = np.getString("streamId", "")
         when (np.type) {
             CAMERAS_REQUEST -> executor.execute { sendCameras() }
-            START -> starter.execute {
+            START -> if (pending.add(id)) starter.execute {
                 try {
-                    start(np)
+                    start(id, np)
                 } catch (e: Exception) {
                     // A disconnect interrupts a start: an exception leaving this thread would end the whole app
                     if (!starter.isShutdown) Log.e(TAG, "Camera start failed", e)
                 } finally {
-                    stopped.remove(np.getString("streamId", ""))
+                    pending.remove(id)
                 }
             }
-            STOP -> np.getString("streamId", "").let { id -> streams.remove(id)?.session?.close() ?: stopped.add(id) }
+            STOP -> streams.remove(id)?.session?.close() ?: pending.remove(id)
         }
         return true
     }
@@ -124,10 +126,9 @@ class WebcamPlugin : ScrcpyPlugin() {
         device.sendPacket(np)
     }
 
-    private fun start(np: NetworkPacket) {
-        val id = np.getString("streamId", "")
+    private fun start(id: String, np: NetworkPacket) {
         val camera = np.getString("cameraId", "")
-        if (id.isEmpty()) return
+        if (id.isEmpty() || id !in pending) return
         if (camera !in cameras.cameraIdList) return status(id, STATE_ERROR, "camera $camera: not on this phone")
         if (!SelfAdb.isSetUp(context)) return status(id, STATE_NEEDS_SETUP)
         val (width, height) = np.getInt("width", 0).coerceIn(0, 8192) to np.getInt("height", 0).coerceIn(0, 8192)
@@ -147,7 +148,7 @@ class WebcamPlugin : ScrcpyPlugin() {
         // A camera opened from the shell disconnects the running one, even where Android lists them as concurrent. A running
         // camera is not given up for another one: two apps would take it from each other for ever. The computer asks again.
         if (streams.isNotEmpty()) return status(id, STATE_BUSY)
-        if (streams.isEmpty()) runCatching { SelfAdb.shell(context, FREE_CAMERAS) }
+        runCatching { SelfAdb.shell(context, FREE_CAMERAS) }
         var error: String? = null
         val dropped = HashSet<String>()
         var retries = 0
@@ -180,7 +181,7 @@ class WebcamPlugin : ScrcpyPlugin() {
                 throw e
             }
             attempt.cancel(true)
-            if (id in stopped) return session.close()
+            if (id !in pending) return session.close()
             if (begin != null) {
                 setWorking(camera, candidate to withSize)
                 val stream = Stream(session, camera)

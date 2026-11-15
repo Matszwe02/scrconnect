@@ -6,6 +6,7 @@
 package org.kde.kdeconnect.scrcpy
 
 import android.content.Context
+import android.util.Log
 import io.github.muntashirakon.adb.AdbStream
 import java.io.Closeable
 import java.io.DataInputStream
@@ -14,6 +15,7 @@ import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.SecureRandom
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -70,6 +72,8 @@ class ScrcpySession(
 
     @Throws(IOException::class)
     fun start() {
+        live += scid
+        startReaper(context)
         try {
             pushServer(context, remotePath)
             val server = track(SelfAdb.open(context, "shell:" + serverCommand(remotePath, args)))
@@ -161,10 +165,54 @@ class ScrcpySession(
                 awaitExit(2000)
             }
             runCatching { serverStream?.close() }
+            live -= scid
+            // A server that outlived pkill (or one orphaned meanwhile) must not keep the phone awake
+            reapOrphans(context)
         }
     }
 
     companion object {
+        /** Sessions of this process whose server may be running. */
+        private val live: MutableSet<String> = ConcurrentHashMap.newKeySet()
+        private val reaperStarted = AtomicBoolean()
+        private const val REAP_INTERVAL_MS = 60_000L
+        private val SERVER_PROCESS = Regex("\\s*(\\d+)\\s+app_process / com\\.genymobile\\.scrcpy\\.Server \\S+ scid=([0-9a-f]+)")
+
+        /**
+         * A scrcpy server whose session is gone (the app died or lost its connection) keeps its virtual display and, with
+         * keep_active, keeps the phone awake forever. Servers only ever belong to this process, so any that it does not
+         * track is killed: once at startup, after each session ends, and periodically while sessions run.
+         */
+        fun startReaper(context: Context) {
+            if (!reaperStarted.compareAndSet(false, true)) return
+            val app = context.applicationContext
+            thread(isDaemon = true, name = "scrcpy-reaper") {
+                reapOrphans(app)
+                while (true) {
+                    Thread.sleep(REAP_INTERVAL_MS)
+                    if (live.isNotEmpty()) reapOrphans(app)
+                }
+            }
+        }
+
+        @Synchronized
+        fun reapOrphans(context: Context) {
+            runCatching {
+                if (!SelfAdb.isSetUp(context)) return
+                val orphans = SelfAdb.shell(context, "ps -A -o PID,ARGS | grep scrcpy.Server")
+                    .lineSequence()
+                    .mapNotNull { SERVER_PROCESS.find(it)?.destructured }
+                    .filter { (_, scid) -> scid !in live }
+                    .map { (pid, _) -> pid }
+                    .toList()
+                if (orphans.isNotEmpty()) {
+                    Log.w(TAG, "Killing orphaned scrcpy servers: $orphans")
+                    SelfAdb.shell(context, "kill ${orphans.joinToString(" ")}")
+                }
+            }
+        }
+
+        private const val TAG = "ScrcpySession"
         private const val VERSION = "5.0.1"
         private const val ASSET = "scrcpy-server-v$VERSION.jar"
         private val DISPLAY_ID = Regex("New display: .* \\(id=(\\d+)\\)")

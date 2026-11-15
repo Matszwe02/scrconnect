@@ -66,7 +66,7 @@ class WebcamPlugin : ScrcpyPlugin() {
     private val pending = ConcurrentHashMap.newKeySet<String>()
 
     // One start at a time: apps often open both cameras at once, and two starts would take each other's camera
-    private val starter = Executors.newSingleThreadExecutor()
+    private val starter = Executors.newSingleThreadExecutor(threads)
 
     // The camera and size option that worked last time: a failing camera is slow to fail, and on some phones drops all cameras
     private val prefs get() = context.getSharedPreferences("webcam", Context.MODE_PRIVATE)
@@ -92,9 +92,6 @@ class WebcamPlugin : ScrcpyPlugin() {
             START -> if (pending.add(id)) starter.execute {
                 try {
                     start(id, np)
-                } catch (e: Exception) {
-                    // A disconnect interrupts a start: an exception leaving this thread would end the whole app
-                    if (!starter.isShutdown) Log.e(TAG, "Camera start failed", e)
                 } finally {
                     pending.remove(id)
                 }

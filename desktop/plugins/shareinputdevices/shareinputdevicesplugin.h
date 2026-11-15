@@ -26,6 +26,7 @@ public:
 
 private:
     Qt::Edge configuredEdge() const;
+    void sendInput(QVariantMap input);
     InputCaptureBackend *m_inputCaptureSession = nullptr;
     QLine m_activatedBarrier;
     QPointF m_lastReleasePosition;

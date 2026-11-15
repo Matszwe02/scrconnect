@@ -90,47 +90,40 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
         sendPacket(packet);
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::mouseMove, this, [this](double x, double y) {
-        NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST, {{u"dx"_s, x * m_pointerSpeed}, {u"dy"_s, y * m_pointerSpeed}});
-        sendPacket(packet);
+        sendInput({{u"dx"_s, x * m_pointerSpeed}, {u"dy"_s, y * m_pointerSpeed}});
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::mouseButton, this, [this](int button, bool pressed) {
-        NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST);
+        QVariantMap input;
         if (m_shellInput) {
-            packet.set(u"button"_s, button);
-            packet.set(u"pressed"_s, pressed);
-            sendPacket(packet);
-            return;
-        }
-        // mousepad only supports separate press and release for left click currently, so send event on release even though not entirely correct
-        if (button == BTN_LEFT) {
-            packet.set(pressed ? u"singlehold"_s : u"singlerelease"_s, true);
+            input = {{u"button"_s, button}, {u"pressed"_s, pressed}};
+        } else if (button == BTN_LEFT) {
+            // mousepad only supports separate press and release for left click currently, so send event on release even though not entirely correct
+            input.insert(pressed ? u"singlehold"_s : u"singlerelease"_s, true);
         } else if (button == BTN_RIGHT && pressed) {
-            packet.set(u"rightclick"_s, true);
+            input.insert(u"rightclick"_s, true);
         } else if (button == BTN_MIDDLE) {
-            packet.set(u"middleclick"_s, true);
+            input.insert(u"middleclick"_s, true);
         }
-        sendPacket(packet);
+        sendInput(input);
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::scrollDelta, this, [this](double x, double y) {
         qDebug() << "scrollDelta" << x << y;
         // scrollDirection in kdeconnect is inverted compared to what we get here
-        NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST, {{u"scroll"_s, true}, {u"dx"_s, x}, {u"dy"_s, y}});
-        sendPacket(packet);
+        sendInput({{u"scroll"_s, true}, {u"dx"_s, x}, {u"dy"_s, y}});
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::scrollDiscrete, this, [this](int x, int y) {
         qDebug() << "scolldiscrete" << x << y;
         constexpr auto anglePer120Step = 15 / 120.0;
-        NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST, {{u"scroll"_s, true}, {u"dx"_s, x * anglePer120Step}, {u"dy"_s, -y * anglePer120Step}});
+        QVariantMap input{{u"scroll"_s, true}, {u"dx"_s, x * anglePer120Step}, {u"dy"_s, -y * anglePer120Step}};
         if (m_shellInput) { // wheel notches, positive = right / up
-            packet.set(u"wheelX"_s, x / 120.0);
-            packet.set(u"wheelY"_s, -y / 120.0);
+            input.insert(u"wheelX"_s, x / 120.0);
+            input.insert(u"wheelY"_s, -y / 120.0);
         }
-        sendPacket(packet);
+        sendInput(input);
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::keyEvent, this, [this](int evdev, bool pressed) {
         if (m_shellInput) {
-            NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST, {{u"evdev"_s, evdev}, {u"pressed"_s, pressed}});
-            sendPacket(packet);
+            sendInput({{u"evdev"_s, evdev}, {u"pressed"_s, pressed}});
         }
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::unavailable, this, [this] {
@@ -156,16 +149,14 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
             return;
         }
         qDebug() << "sending key" << text << modifiers << specialKeysMap.value(key);
-        NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST,
-                             {
-                                 {u"key"_s, text},
-                                 {u"specialKey"_s, specialKeysMap.value(key)},
-                                 {u"shift"_s, static_cast<bool>(modifiers & Qt::ShiftModifier)},
-                                 {u"ctrl"_s, static_cast<bool>(modifiers & Qt::ControlModifier)},
-                                 {u"alt"_s, static_cast<bool>(modifiers & Qt::AltModifier)},
-                                 {u"super"_s, static_cast<bool>(modifiers & Qt::MetaModifier)},
-                             });
-        sendPacket(packet);
+        sendInput({
+            {u"key"_s, text},
+            {u"specialKey"_s, specialKeysMap.value(key)},
+            {u"shift"_s, static_cast<bool>(modifiers & Qt::ShiftModifier)},
+            {u"ctrl"_s, static_cast<bool>(modifiers & Qt::ControlModifier)},
+            {u"alt"_s, static_cast<bool>(modifiers & Qt::AltModifier)},
+            {u"super"_s, static_cast<bool>(modifiers & Qt::MetaModifier)},
+        });
     });
 
     // Phones have several times the pixel density of a monitor: the pointer may move faster there (percent)
@@ -175,6 +166,14 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
     };
     applyConfig();
     connect(config(), &KdeConnectPluginConfig::configChanged, this, applyConfig);
+}
+
+// "leap" tells this fork's phone app Phone Leap's input from the remote control's and keyboard's; others ignore it
+void ShareInputDevicesPlugin::sendInput(QVariantMap input)
+{
+    input.insert(u"leap"_s, true);
+    NetworkPacket packet(PACKET_TYPE_MOUSEPAD_REQUEST, input);
+    sendPacket(packet);
 }
 
 Qt::Edge ShareInputDevicesPlugin::configuredEdge() const

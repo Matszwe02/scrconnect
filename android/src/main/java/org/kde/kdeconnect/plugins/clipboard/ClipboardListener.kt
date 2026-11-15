@@ -52,7 +52,10 @@ class ClipboardListener {
             cm = context.getSystemService<ClipboardManager>()!!
             cm.addPrimaryClipChangedListener { this.onClipboardChanged() }
         }
-        ShellBridge.onClipboard = { text -> mainHandler.post { onShellClipboard(text) } }
+        // The bridge also runs for Phone Leap: its clipboard reports count only while a clipboard plugin asked for them
+        ShellBridge.onClipboard = { text ->
+            if (ShellBridge.isServing(ClipboardPlugin.SHELL_BRIDGE_USER)) mainHandler.post { onShellClipboard(text) }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && ClipboardPlugin.canSyncAutomatically(context)) {
             ThreadHelper.runOnNewThread {
                 try {

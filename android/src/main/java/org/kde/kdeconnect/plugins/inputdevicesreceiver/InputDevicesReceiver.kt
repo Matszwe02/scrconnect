@@ -40,18 +40,19 @@ class InputDevicesReceiverPlugin : Plugin() {
     var shellInput: ShellInput? = null
         private set
 
-    /** The computer runs this fork: it ignores a release while it does not hold the pointer. */
-    private var moddedComputer = false
     private var lastAlong = 0.5
     private var lastReleaseAt = 0L
 
+    /** A computer running this fork marks Phone Leap's input "leap", which tells it from the remote control's and keyboard's. */
+    private fun strayLeapInput(np: NetworkPacket) =
+        np.type == PACKET_TYPE_MOUSEPAD_REQUEST && np.getBoolean("leap", false) && Cursor.enterEdge == NONE_EDGE
+
     /**
-     * Mouse input belongs to Phone Leap while the phone has the pointer, and for a moment after giving it back (input sent
-     * before the computer got the release is still arriving). The mouse receiver stays out then.
+     * Input belongs to Phone Leap while the phone has the pointer, and for a moment after giving it back (input sent before
+     * the computer got the release is still arriving). The mouse receiver and the remote keyboard stay out then.
      */
-    val leapInput: Boolean
-        get() = shellInput != null ||
-            (moddedComputer && Cursor.enterEdge == NONE_EDGE && SystemClock.elapsedRealtime() - lastReleaseAt <= RECLAIM_AFTER_MS)
+    fun isLeapInput(np: NetworkPacket): Boolean =
+        shellInput != null || (strayLeapInput(np) && SystemClock.elapsedRealtime() - lastReleaseAt <= RECLAIM_AFTER_MS)
 
     private val metrics = DisplayMetrics()
     private lateinit var displayManager: DisplayManager
@@ -150,13 +151,12 @@ class InputDevicesReceiverPlugin : Plugin() {
             endShellInput() // the computer took the pointer back
             return true
         }
-        if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST) moddedComputer = np.getBoolean("modded", false)
         if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST && startShellInput(np)) return true
         shellInput?.let {
             if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST) handleShellInput(it, np)
             return true
         }
-        if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST && moddedComputer && Cursor.enterEdge == NONE_EDGE) {
+        if (strayLeapInput(np)) {
             // The computer may still hold the pointer captured (a lost release): hand it back again, but not right after a
             // release, while earlier input is still on its way
             if (SystemClock.elapsedRealtime() - lastReleaseAt > RECLAIM_AFTER_MS) release(0, 0, along = lastAlong)
@@ -171,7 +171,9 @@ class InputDevicesReceiverPlugin : Plugin() {
             Cursor.x = np.getInt("deltax", Cursor.x)
             Cursor.y = np.getInt("deltay", Cursor.y)
 
-            release(Cursor.x, Cursor.y, "needs_setup")
+            // Not for the remote control's or keyboard's input: the computer would tell the user to set up Phone Leap
+            val leap = np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST || np.getBoolean("leap", false)
+            release(Cursor.x, Cursor.y, "needs_setup".takeIf { leap })
             return false
         }
 

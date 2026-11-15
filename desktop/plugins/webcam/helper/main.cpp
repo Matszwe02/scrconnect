@@ -290,24 +290,24 @@ private:
 
     void readVideo()
     {
+        bool decoded = false;
         for (const Scrcpy::VideoEvent &event : m_parser.push(m_socket.readAll())) {
             if (event.type == Scrcpy::VideoEvent::CodecId) {
                 m_decoder.open(event.codec);
             } else if (event.type == Scrcpy::VideoEvent::Size) {
                 m_decoder.flush();
             } else if (event.type == Scrcpy::VideoEvent::Frame) {
-                m_decoder.decode(event, m_picture);
+                decoded |= m_decoder.decode(event, m_picture);
             }
         }
         if (!m_parser.error().isEmpty()) {
             m_socket.abort();
-        } else if (!m_picture.isNull()) {
+        } else if (decoded) { // m_picture stays: the decoder reuses its buffer
             QImage picture = m_picture.transformed(QTransform().rotate(m_spec.value("rotation"_L1).toInt()));
             if (m_spec.value("mirror"_L1).toBool()) {
                 picture = std::move(picture).mirrored(true, false);
             }
             show(picture);
-            m_picture = QImage();
             m_lastFrame.start();
         }
     }

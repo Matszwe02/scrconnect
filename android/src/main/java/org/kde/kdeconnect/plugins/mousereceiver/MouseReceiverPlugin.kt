@@ -39,7 +39,7 @@ class MouseReceiverPlugin : Plugin() {
             .create()
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
-        if (device.getPlugin<InputDevicesReceiverPlugin>()?.leapInput == true) return true // injected through the shell instead
+        if (device.getPlugin<InputDevicesReceiverPlugin>()?.isLeapInput(np) == true) return true // injected through the shell instead
         if (getMousePadPacketType(np) != MousePadPacketType.Mouse) {
             return false // This packet will be handled by the remotekeyboard instead, silently ignore
         }

@@ -92,7 +92,7 @@ class RemoteKeyboardPlugin : Plugin() {
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
-        if (device.getPlugin<InputDevicesReceiverPlugin>()?.leapInput == true) return false // injected through the shell instead
+        if (device.getPlugin<InputDevicesReceiverPlugin>()?.isLeapInput(np) == true) return false // injected through the shell instead
         // Check if this package is for the Mouse Receiver
         if (!(np.has("key") || np.has("specialKey"))) {
             return false

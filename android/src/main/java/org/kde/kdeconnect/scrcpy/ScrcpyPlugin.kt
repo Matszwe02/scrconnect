@@ -7,8 +7,11 @@ package org.kde.kdeconnect.scrcpy
 
 import android.app.Activity
 import android.content.Intent
+import android.util.Log
 import java.io.InputStream
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.ThreadFactory
 import org.kde.kdeconnect.Device
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
@@ -17,7 +20,11 @@ abstract class ScrcpyPlugin : Plugin() {
     protected abstract val idKey: String
     protected abstract val statusType: String
 
-    protected val executor = Executors.newCachedThreadPool()
+    // A disconnect interrupts the running tasks, and an exception leaving a pool thread would end the whole app
+    protected val threads = ThreadFactory { task ->
+        Thread(task).apply { setUncaughtExceptionHandler { _, e -> Log.w("ScrcpyPlugin", "A task ended with an exception", e) } }
+    }
+    protected val executor: ExecutorService = Executors.newCachedThreadPool(threads)
 
     override fun checkRequiredPermissions(): Boolean = SelfAdb.isSetUp(context)
     override fun loadPluginWhenRequiredPermissionsMissing(): Boolean = true

@@ -1,5 +1,5 @@
 kdeconnect_add_plugin(kdeconnect_screenmirror SOURCES screenmirrorplugin.cpp audioplayer.cpp streamrelay.cpp)
-target_link_libraries(kdeconnect_screenmirror kdeconnectcore Qt::DBus Qt::Network Qt::Multimedia)
+target_link_libraries(kdeconnect_screenmirror kdeconnectcore Qt::DBus Qt::Network)
 install(FILES kdeconnect_screenmirror_config.qml DESTINATION ${KDE_INSTALL_DATADIR}/kdeconnect)
 
 find_package(Qt6 ${QT_MIN_VERSION} QUIET COMPONENTS Widgets)
@@ -12,3 +12,8 @@ if (TARGET Qt::Widgets AND TARGET PkgConfig::FFMPEG)
 else()
     message(STATUS "kdeconnect-mirror is not built: it needs Qt Widgets and FFmpeg (libavcodec, libavutil, libswscale)")
 endif()
+
+# Plays the phone's audio, in a process of its own: the audio backend can crash when an output device goes away
+add_executable(kdeconnect-audio audiohelper/main.cpp)
+target_link_libraries(kdeconnect-audio Qt::Core Qt::Multimedia)
+install(TARGETS kdeconnect-audio ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})

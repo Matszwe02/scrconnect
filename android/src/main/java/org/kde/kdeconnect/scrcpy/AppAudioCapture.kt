@@ -54,36 +54,40 @@ object AppAudioCapture {
         }
     }
 
+    private fun audioPolicy(name: String) = Class.forName("android.media.audiopolicy.$name")
+
+    /** Calls a public method of a hidden class; every argument comes with its declared type. */
+    private fun Any.call(name: String, vararg args: Pair<Class<*>, Any?>): Any? =
+        javaClass.getMethod(name, *args.map { it.first }.toTypedArray()).invoke(this, *args.map { it.second }.toTypedArray())
+
     @SuppressLint("PrivateApi")
     private fun createRecord(context: Context, uid: Int): AudioRecord {
-        val ruleClass = Class.forName("android.media.audiopolicy.AudioMixingRule")
-        val ruleBuilderClass = Class.forName("android.media.audiopolicy.AudioMixingRule\$Builder")
-        val ruleBuilder = ruleBuilderClass.getConstructor().newInstance()
-        ruleBuilderClass.getMethod("setTargetMixRole", Int::class.java).invoke(ruleBuilder, ruleClass.getField("MIX_ROLE_PLAYERS").getInt(null))
-        ruleBuilderClass.getMethod("addMixRule", Int::class.java, Any::class.java).invoke(ruleBuilder, ruleClass.getField("RULE_MATCH_UID").getInt(null), uid)
-        val rule = ruleBuilderClass.getMethod("build").invoke(ruleBuilder)
+        val int = Int::class.java
+        val ruleClass = audioPolicy("AudioMixingRule")
+        val rule = audioPolicy("AudioMixingRule\$Builder").getConstructor().newInstance().apply {
+            call("setTargetMixRole", int to ruleClass.getField("MIX_ROLE_PLAYERS").getInt(null))
+            call("addMixRule", int to ruleClass.getField("RULE_MATCH_UID").getInt(null), Any::class.java to uid)
+        }.call("build")
 
-        val mixClass = Class.forName("android.media.audiopolicy.AudioMix")
-        val mixBuilderClass = Class.forName("android.media.audiopolicy.AudioMix\$Builder")
-        val mixBuilder = mixBuilderClass.getConstructor(ruleClass).newInstance(rule)
+        val mixClass = audioPolicy("AudioMix")
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
             .setSampleRate(48000)
             .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
             .build()
-        mixBuilderClass.getMethod("setFormat", AudioFormat::class.java).invoke(mixBuilder, format)
-        mixBuilderClass.getMethod("setRouteFlags", Int::class.java).invoke(mixBuilder, mixClass.getField("ROUTE_FLAG_LOOP_BACK").getInt(null))
-        val mix = mixBuilderClass.getMethod("build").invoke(mixBuilder)
+        val mix = audioPolicy("AudioMix\$Builder").getConstructor(ruleClass).newInstance(rule).apply {
+            call("setFormat", AudioFormat::class.java to format)
+            call("setRouteFlags", int to mixClass.getField("ROUTE_FLAG_LOOP_BACK").getInt(null))
+        }.call("build")
 
-        val policyClass = Class.forName("android.media.audiopolicy.AudioPolicy")
-        val policyBuilderClass = Class.forName("android.media.audiopolicy.AudioPolicy\$Builder")
-        val policyBuilder = policyBuilderClass.getConstructor(Context::class.java).newInstance(context)
-        policyBuilderClass.getMethod("addMix", mixClass).invoke(policyBuilder, mix)
-        val policy = policyBuilderClass.getMethod("build").invoke(policyBuilder)
+        val policyClass = audioPolicy("AudioPolicy")
+        val policy = audioPolicy("AudioPolicy\$Builder").getConstructor(Context::class.java).newInstance(context).apply {
+            call("addMix", mixClass to mix)
+        }.call("build")!!
         val register = AudioManager::class.java.getDeclaredMethod("registerAudioPolicyStatic", policyClass).apply { isAccessible = true }
         val result = register.invoke(null, policy) as Int
         check(result == 0) { "registerAudioPolicy() returned $result" }
-        return policyClass.getMethod("createAudioRecordSink", mixClass).invoke(policy, mix) as AudioRecord
+        return policy.call("createAudioRecordSink", mixClass to mix) as AudioRecord
     }
 
     @SuppressLint("PrivateApi", "DiscouragedPrivateApi")

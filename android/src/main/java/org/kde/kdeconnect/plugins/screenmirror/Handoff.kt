@@ -59,19 +59,19 @@ object Handoff {
     fun exists(context: Context, taskId: Int): Boolean =
         Regex("(?m)^\\s*\\* Task\\w*\\{\\S+ #$taskId\\b").containsMatchIn(shell(context, "dumpsys activity activities | grep -F '* Task'"))
 
-    fun move(context: Context, task: Task, displayId: Int): Boolean {
-        fun ok(out: String) = listOf("Error", "Exception", "Unknown").none { out.contains(it, ignoreCase = true) }
-        if (ok(shell(context, "cmd activity display move-stack ${task.id} $displayId"))) return true
-        val component = task.component?.takeIf { COMPONENT.matches(it) } ?: return false
-        return ok(shell(context, "am start --display $displayId -n '$component' -f 0x20000")) // FLAG_ACTIVITY_REORDER_TO_FRONT
+    private fun ok(out: String) = listOf("Error", "Exception", "Unknown").none { out.contains(it, ignoreCase = true) }
+
+    /** Brings the activity's task to the front (FLAG_ACTIVITY_REORDER_TO_FRONT), on [displayId] or where it is. */
+    private fun start(context: Context, component: String?, displayId: Int? = null): Boolean {
+        val name = component?.takeIf { COMPONENT.matches(it) } ?: return false
+        return ok(shell(context, "am start ${displayId?.let { "--display $it " }.orEmpty()}-n '$name' -f 0x20000"))
     }
 
+    fun move(context: Context, task: Task, displayId: Int): Boolean =
+        ok(shell(context, "cmd activity display move-stack ${task.id} $displayId")) || start(context, task.component, displayId)
+
     fun bringToFront(context: Context, packageName: String, component: String?) {
-        if (!ScrcpySession.isValidPackageName(packageName)) return
-        if (component != null && COMPONENT.matches(component)) {
-            val out = shell(context, "am start -n '$component' -f 0x20000")
-            if (!out.contains("Error", ignoreCase = true)) return
-        }
+        if (!ScrcpySession.isValidPackageName(packageName) || start(context, component)) return
         shell(context, "monkey -p $packageName -c android.intent.category.LAUNCHER 1")
     }
 }

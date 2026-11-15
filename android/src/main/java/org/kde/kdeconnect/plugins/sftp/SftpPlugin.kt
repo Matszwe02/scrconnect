@@ -24,6 +24,7 @@ import org.kde.kdeconnect.helpers.JsonHelper.json
 import org.kde.kdeconnect.helpers.getLocalIpAddress
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.ui.AlertDialogFragment
 import org.kde.kdeconnect.ui.DeviceSettingsAlertDialogFragment
 import org.kde.kdeconnect.ui.PluginSettingsFragment
@@ -47,6 +48,10 @@ class SftpPlugin : Plugin(), OnSharedPreferenceChangeListener {
             SftpSettingsFragment.getStorageInfoList(context, this).isNotEmpty()
         }
     }
+
+    // Folders picked one by one (before Android 11) are the user's choice alone
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (!optional && SimpleSftpServer.SUPPORTS_NATIVEFS) AdbGrant.allFilesAccess(context) else super.adbGrantCommands(optional)
 
     override val permissionExplanationDialog: AlertDialogFragment
         get() = if (SimpleSftpServer.SUPPORTS_NATIVEFS) {

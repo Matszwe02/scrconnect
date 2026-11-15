@@ -38,6 +38,7 @@ import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.helpers.AppsHelper.appNameLookup
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.plugins.screenmirror.ScreenMirrorPlugin
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
@@ -540,6 +541,9 @@ class NotificationsPlugin : Plugin(), NotificationReceiver.NotificationListener 
 
         return true
     }
+
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (optional) super.adbGrantCommands(optional) else AdbGrant.notificationListener(context)
 
     override val permissionExplanationDialog: DialogFragment
         get() = StartActivityAlertDialogFragment.Builder()

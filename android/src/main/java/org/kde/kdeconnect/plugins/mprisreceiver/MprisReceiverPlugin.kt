@@ -19,6 +19,7 @@ import org.kde.kdeconnect.helpers.AppsHelper.appNameLookup
 import org.kde.kdeconnect.helpers.ThreadHelper
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.plugins.notifications.NotificationReceiver
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
 import org.kde.kdeconnect_tp.R
@@ -200,6 +201,9 @@ class MprisReceiverPlugin : Plugin() {
     override fun checkRequiredPermissions(): Boolean {
         return NotificationReceiver.hasReadNotificationsPermission(context)
     }
+
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (optional) super.adbGrantCommands(optional) else AdbGrant.notificationListener(context)
 
     override val permissionExplanationDialog: DialogFragment
         get() = StartActivityAlertDialogFragment.Builder()

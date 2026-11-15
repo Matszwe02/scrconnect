@@ -304,6 +304,16 @@ abstract class Plugin {
 
     open fun openPermissionsSetup(activity: Activity): Boolean = false
 
+    /** What the list of plugins that need permissions calls this plugin. */
+    open val permissionLabel: String get() = displayName
+
+    /**
+     * Shell commands that grant what [checkRequiredPermissions] (with [optional]: [checkOptionalPermissions]) still misses: with
+     * the ADB setup the app runs them itself instead of sending the user to the settings. Empty when only the user can grant it.
+     */
+    open fun adbGrantCommands(optional: Boolean = false): List<String> =
+        (if (optional) optionalPermissions else requiredPermissions).filterNot(::isPermissionGranted).map { "pm grant ${context.packageName} $it" }
+
     open fun loadPluginWhenRequiredPermissionsMissing(): Boolean = false
 
     @EmptySuper

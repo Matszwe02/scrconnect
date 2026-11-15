@@ -25,6 +25,7 @@ import org.kde.kdeconnect.KdeConnectAccessibilityService
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.plugins.inputdevicesreceiver.InputDevicesReceiverPlugin
 import org.kde.kdeconnect.plugins.remotekeyboardime.RemoteKeyboardIMEPlugin
 import org.kde.kdeconnect.plugins.remotekeyboardime.RemoteKeyboardService
@@ -42,6 +43,9 @@ class RemoteKeyboardPlugin : Plugin() {
         get() = context.resources.getString(R.string.pref_plugin_remotekeyboard_desc)
 
     override val minSdk: Int = Build.VERSION_CODES.O
+
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (optional) super.adbGrantCommands(optional) else AdbGrant.accessibility(context)
 
     override val permissionExplanationDialog: DialogFragment
         get() = StartActivityAlertDialogFragment.Builder()

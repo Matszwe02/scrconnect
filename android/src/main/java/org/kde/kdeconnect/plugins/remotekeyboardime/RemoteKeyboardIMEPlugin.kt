@@ -24,6 +24,7 @@ import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory
 import org.kde.kdeconnect.plugins.remotekeyboard.RemoteKeyboardPlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.ui.PluginSettingsFragment
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
 import org.kde.kdeconnect_tp.R
@@ -283,6 +284,9 @@ class RemoteKeyboardIMEPlugin : Plugin(), SharedPreferences.OnSharedPreferenceCh
             context.packageName == info.packageName
         }
     }
+
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (optional) super.adbGrantCommands(optional) else AdbGrant.inputMethod(context)
 
     override val permissionExplanationDialog: DialogFragment
         get() = StartActivityAlertDialogFragment.Builder()

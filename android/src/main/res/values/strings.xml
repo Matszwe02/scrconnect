@@ -686,6 +686,10 @@ SPDX-License-Identifier: GPL-2.0-only OR GPL-3.0-only OR LicenseRef-KDE-Accepted
     <string name="mirror_open_on_pc_summary">Lets the computer open a notification\'s chat or mail in an app window</string>
 
     <string name="mirror_setup_title">ADB setup</string>
+    <string name="adb_permission">ADB permission</string>
+    <string name="adb_grant_message">SCR Connect can grant this permission itself, through the ADB setup.</string>
+    <string name="adb_grant_manually">Grant manually</string>
+    <string name="adb_grant_failed">The permission could not be granted automatically</string>
     <string name="mirror_setup_checking">Checking your phone…</string>
     <string name="mirror_setup_intro">Screen mirroring, camera sharing, sending copied text automatically and Phone Leap use ADB over wireless debugging. Set it up once, here on the phone: it keeps working by itself afterwards, also after restarts. This page follows your steps.</string>
     <string name="mirror_check_android">Android 11 or newer</string>

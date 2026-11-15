@@ -190,7 +190,7 @@ private fun PluginsWithoutPermissions(
     )
     plugins.forEach { plugin ->
         Text(
-            text = plugin.displayName,
+            text = plugin.permissionLabel,
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { action(plugin) }

@@ -14,6 +14,7 @@ import org.kde.kdeconnect.KdeConnectAccessibilityService
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.PluginFactory.LoadablePlugin
+import org.kde.kdeconnect.scrcpy.AdbGrant
 import org.kde.kdeconnect.plugins.inputdevicesreceiver.InputDevicesReceiverPlugin
 import org.kde.kdeconnect.ui.StartActivityAlertDialogFragment
 import org.kde.kdeconnect_tp.R
@@ -27,6 +28,9 @@ class MouseReceiverPlugin : Plugin() {
     override fun checkRequiredPermissions(): Boolean {
         return KdeConnectAccessibilityService.instance != null
     }
+
+    override fun adbGrantCommands(optional: Boolean): List<String> =
+        if (optional) super.adbGrantCommands(optional) else AdbGrant.accessibility(context)
 
     override val permissionExplanationDialog: DialogFragment
         get() = StartActivityAlertDialogFragment.Builder()

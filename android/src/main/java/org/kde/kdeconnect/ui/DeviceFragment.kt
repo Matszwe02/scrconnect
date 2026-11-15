@@ -17,6 +17,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.activity.OnBackPressedCallback
 import androidx.annotation.StringRes
 import androidx.annotation.UiThread
@@ -25,7 +26,12 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.view.MenuProvider
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.kde.kdeconnect.BackgroundService
 import org.kde.kdeconnect.Device
 import org.kde.kdeconnect.Device.PluginsChangedListener
@@ -37,6 +43,7 @@ import org.kde.kdeconnect.helpers.security.SslHelper
 import org.kde.kdeconnect.plugins.Plugin
 import org.kde.kdeconnect.plugins.battery.BatteryPlugin
 import org.kde.kdeconnect.plugins.connectivityreport.ConnectivityReportPlugin
+import org.kde.kdeconnect.scrcpy.SelfAdb
 import org.kde.kdeconnect.ui.compose.KdeTheme
 import org.kde.kdeconnect.ui.compose.screen.device.DeviceErrorScreen
 import org.kde.kdeconnect.ui.compose.screen.device.DevicePairingScreen
@@ -184,6 +191,44 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
         refreshUI()
     }
 
+    /**
+     * With the ADB setup done the app grants a plugin's permissions itself, in one tap. Without it, when the user prefers, or
+     * when that did not work, the plugin's own dialog asks the user, as ever.
+     */
+    private fun askPermissions(plugin: Plugin, optional: Boolean) {
+        val activity = mActivity ?: return
+        if (plugin.openPermissionsSetup(activity)) return
+        fun granted() = if (optional) plugin.checkOptionalPermissions() else plugin.checkRequiredPermissions()
+        fun manual() {
+            if (!isAdded || isStateSaved) return
+            (if (optional) plugin.optionalPermissionExplanationDialog else plugin.permissionExplanationDialog).show(childFragmentManager, null)
+        }
+        val commands = plugin.adbGrantCommands(optional)
+        if (commands.isEmpty() || !SelfAdb.isSetUp(activity)) return manual()
+        MaterialAlertDialogBuilder(activity)
+            .setTitle(plugin.displayName)
+            .setMessage(R.string.adb_grant_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setNeutralButton(R.string.adb_grant_manually) { _, _ -> manual() }
+            .setPositiveButton(R.string.ok) { _, _ ->
+                val app = activity.applicationContext
+                viewLifecycleOwner.lifecycleScope.launch {
+                    // Services (accessibility, notifications) take a moment to start after the grant
+                    val ran = withContext(Dispatchers.IO) {
+                        runCatching { SelfAdb.shell(app, commands.joinToString("; ")) }.isSuccess &&
+                            (1..10).any { delay(300); granted() || plugin.adbGrantCommands(optional).isEmpty() }
+                    }
+                    device?.launchBackgroundReloadPluginsFromSettings()
+                    if (!granted()) {
+                        // Nothing left for ADB (a plugin's own question remains), or it failed
+                        if (!ran || plugin.adbGrantCommands(optional).isNotEmpty()) Toast.makeText(app, R.string.adb_grant_failed, Toast.LENGTH_LONG).show()
+                        manual()
+                    }
+                }
+            }
+            .show()
+    }
+
     private fun refreshDevicesAction() {
         BackgroundService.ForceRefreshConnections(requireContext())
         viewModel.setRefreshing(refreshing = true)
@@ -238,29 +283,22 @@ class DeviceFragment : BaseFragment<ActivityDeviceBinding>() {
                             if (device.isReachable) {
                                 val pluginsWithButtons =
                                     device.loadedPlugins.values.flatMap { plugin -> plugin.getUiButtons() }
+                                // One entry for the plugins that share a setup (the ADB one)
                                 val pluginsNeedPermissions =
                                     device.pluginsWithoutPermissions.values.filter { plugin ->
                                         device.isPluginEnabled(plugin.pluginKey)
-                                    }
+                                    }.distinctBy { it.permissionLabel }
                                 val pluginsNeedOptionalPermissions =
                                     device.pluginsWithoutOptionalPermissions.values.filter { plugin ->
                                         device.isPluginEnabled(plugin.pluginKey)
-                                    }
+                                    }.distinctBy { it.permissionLabel }
                                 PluginsScreen(
                                     pluginsWithButtons = pluginsWithButtons,
                                     pluginsNeedPermissions = pluginsNeedPermissions,
                                     pluginsNeedOptionalPermissions = pluginsNeedOptionalPermissions,
                                     onButtonClick = { button -> button.onClick(mActivity!!) },
-                                    actionNeedPermissions = { plugin ->
-                                        if (!plugin.openPermissionsSetup(mActivity!!)) {
-                                            plugin.permissionExplanationDialog.show(childFragmentManager, null)
-                                        }
-                                    },
-                                    actionNeedOptionalPermissions = { plugin ->
-                                        if (!plugin.openPermissionsSetup(mActivity!!)) {
-                                            plugin.optionalPermissionExplanationDialog.show(childFragmentManager, null)
-                                        }
-                                    }
+                                    actionNeedPermissions = { plugin -> askPermissions(plugin, optional = false) },
+                                    actionNeedOptionalPermissions = { plugin -> askPermissions(plugin, optional = true) }
                                 )
                                 displayBatteryInfoIfPossible()
                             } else {

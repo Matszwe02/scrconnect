@@ -15,6 +15,7 @@ import java.util.concurrent.ThreadFactory
 import org.kde.kdeconnect.Device
 import org.kde.kdeconnect.NetworkPacket
 import org.kde.kdeconnect.plugins.Plugin
+import org.kde.kdeconnect_tp.R
 
 abstract class ScrcpyPlugin : Plugin() {
     protected abstract val idKey: String
@@ -28,6 +29,7 @@ abstract class ScrcpyPlugin : Plugin() {
 
     override fun checkRequiredPermissions(): Boolean = SelfAdb.isSetUp(context)
     override fun loadPluginWhenRequiredPermissionsMissing(): Boolean = true
+    override val permissionLabel: String get() = context.getString(R.string.adb_permission)
     override fun openPermissionsSetup(activity: Activity): Boolean {
         activity.startActivity(Intent(activity, SetupActivity::class.java))
         return true

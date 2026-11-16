@@ -24,7 +24,11 @@ object Handoff {
     private val RESUMED = Regex("ResumedActivity.*ActivityRecord\\{\\S+ u\\d+ (([A-Za-z][\\w.]*)/[\\w.$]+) t(\\d+)")
     private val COMPONENT = Regex("[A-Za-z][\\w.]*/[\\w.$]+")
 
-    private fun shell(context: Context, command: String): String = runCatching { SelfAdb.shell(context, "$command 2>&1") }.getOrDefault("")
+    // The ADB library sometimes loses a short command's reply: the second try nearly always gets it
+    private fun shell(context: Context, command: String): String {
+        repeat(2) { runCatching { return SelfAdb.shell(context, "$command 2>&1") } }
+        return ""
+    }
 
     private fun skipped(context: Context) = setOfNotNull(
         context.packageName,

@@ -56,7 +56,10 @@ int androidMetaState(Qt::KeyboardModifiers modifiers)
 MirrorWindow::MirrorWindow(const MirrorOptions &options)
     : m_options(options)
     , m_plugin(kService, u"/modules/kdeconnect/devices/%1/screenmirror"_s.arg(options.deviceId), kInterface)
+    , m_daemonWatcher(kService, QDBusConnection::sessionBus(), QDBusServiceWatcher::WatchForOwnerChange)
 {
+    // These calls run on the GUI thread: an unresponsive daemon must not freeze the window for the default 25 s each
+    m_plugin.setTimeout(3000);
     setWindowTitle(options.label.isEmpty() ? i18n("Phone") : options.label);
     setAttribute(Qt::WA_OpaquePaintEvent);
     setFocusPolicy(Qt::StrongFocus);
@@ -66,7 +69,17 @@ MirrorWindow::MirrorWindow(const MirrorOptions &options)
 
     connect(&m_socket, &QLocalSocket::errorOccurred, this, [this](QLocalSocket::LocalSocketError error) {
         if (error == QLocalSocket::ServerNotFoundError || error == QLocalSocket::ConnectionRefusedError) {
-            setMessage(i18n("The mirroring session has ended."));
+            endSession(i18n("The mirroring session has ended."));
+        }
+    });
+    connect(&m_daemonWatcher, &QDBusServiceWatcher::serviceOwnerChanged, this, [this](const QString &, const QString &, const QString &newOwner) {
+        if (newOwner.isEmpty()) {
+            m_retryTimer.stop();
+            m_sessionId.clear(); // the daemon took the session with it
+            m_socket.abort();
+            endSession(i18n("KDE Connect stopped. This window continues when it is back."));
+        } else if (m_ended) {
+            start();
         }
     });
     m_retryTimer.setSingleShot(true);
@@ -81,7 +94,7 @@ MirrorWindow::MirrorWindow(const MirrorOptions &options)
     connect(&m_socket, &QLocalSocket::readyRead, this, &MirrorWindow::readVideo);
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
         if (!m_sessionId.isEmpty()) {
-            setMessage(m_image.isNull() ? i18n("The phone stopped before showing anything.") : i18n("Mirroring ended."));
+            endSession(m_image.isNull() ? i18n("The phone stopped before showing anything.") : i18n("Mirroring ended."));
         }
     });
     m_hintTimer.setSingleShot(true);
@@ -109,6 +122,7 @@ MirrorWindow::~MirrorWindow()
 void MirrorWindow::start()
 {
     stopSession();
+    m_ended = false; // after stopSession(), whose disconnect would set it
     m_parser = Scrcpy::VideoParser();
     m_decoder.close();
     m_image = QImage();
@@ -138,7 +152,7 @@ void MirrorWindow::start()
                                                                 {u"height"_s, m_sentDisplaySize.height()},
                                                                 {u"codec"_s, VideoDecoder::preferredCodec()}});
         if (!id.isValid() || id.value().isEmpty()) {
-            setMessage(i18n("Could not start mirroring. Is the phone connected, with screen mirroring enabled?"));
+            endSession(i18n("Could not start mirroring. Is the phone connected, with screen mirroring enabled?"));
             return;
         }
         m_sessionId = id.value();
@@ -153,6 +167,13 @@ void MirrorWindow::stopSession()
     if (!m_sessionId.isEmpty()) {
         m_plugin.call(QDBus::NoBlock, u"stopSession"_s, std::exchange(m_sessionId, {}));
     }
+}
+
+void MirrorWindow::endSession(const QString &message)
+{
+    m_ended = true;
+    m_touching = false;
+    setMessage(message + u"\n\n"_s + i18n("Click here or press a key to try again."));
 }
 
 void MirrorWindow::onStatus(const QString &sessionId, const QString &state, const QString &message)
@@ -175,7 +196,7 @@ void MirrorWindow::onStatus(const QString &sessionId, const QString &state, cons
         update();
     } else if (state == "error"_L1) {
         m_sessionId.clear();
-        setMessage(i18n("The phone reported an error:\n%1", message));
+        endSession(i18n("The phone reported an error:\n%1", message));
     }
 }
 
@@ -409,6 +430,10 @@ void MirrorWindow::mouseButton(QMouseEvent *event, bool down)
 
 void MirrorWindow::mousePressEvent(QMouseEvent *event)
 {
+    if (m_ended) {
+        start();
+        return;
+    }
     mouseButton(event, true);
 }
 
@@ -439,6 +464,10 @@ bool MirrorWindow::focusNextPrevChild(bool)
 
 void MirrorWindow::keyPressEvent(QKeyEvent *event)
 {
+    if (m_ended) {
+        start();
+        return;
+    }
     const Qt::KeyboardModifiers mods = event->modifiers();
     const int key = event->key();
     if (mods == Qt::AltModifier && (key == Qt::Key_H || key == Qt::Key_S)) {

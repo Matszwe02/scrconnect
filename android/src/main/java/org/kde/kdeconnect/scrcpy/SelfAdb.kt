@@ -11,6 +11,7 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.util.Log
 import android.provider.Settings
 import androidx.annotation.StringRes
 import io.github.muntashirakon.adb.AbsAdbConnectionManager
@@ -32,6 +33,8 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.util.Date
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.concurrent.thread
 import org.bouncycastle.asn1.x500.X500Name
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
@@ -47,7 +50,11 @@ object SelfAdb {
         DONE(R.string.mirror_step_done),
     }
 
+    private const val TAG = "SelfAdb"
     private const val ADB_WIFI_ENABLED = "adb_wifi_enabled"
+    private const val CALL_TIMEOUT_MS = 3_000L
+    private const val OPEN_TIMEOUT_MS = 8_000L
+    private const val SHELL_TIMEOUT_MS = 8_000L
 
     // Unlike wireless debugging, it stays open off Wi-Fi until reboot
     private const val TCP_PORT = 5555
@@ -115,16 +122,54 @@ object SelfAdb {
         false
     }
 
-    @Synchronized
     fun connect(context: Context): Boolean {
         val m = manager(context)
-        if (m.isConnected) return true
+        if (isConnected(m) == null) reset(m) // wedged: see open()
+        return connectFresh(context)
+    }
+
+    @Synchronized
+    private fun connectFresh(context: Context): Boolean {
+        val m = manager(context)
+        if (isConnected(m) == true) return true
         if (!isSupported()) return false
         if (connectTcpPort(m)) return true
         if (!isWifiConnected(context)) return false
         if (!connectTls(context, m)) return false
         if (!tcpPortOpen()) switchToTcpPort(context, m)
         return m.isConnected
+    }
+
+    /** Null when the library does not answer: it asks under the same lock that a hung stream open holds. */
+    private fun isConnected(m: Manager): Boolean? = bounded(CALL_TIMEOUT_MS) { m.isConnected }
+
+    /**
+     * Runs [block] on its own thread and waits [timeoutMs] for it. The library waits for the phone's reply to a stream open
+     * without a limit, and a reply that comes too early is missed for good: that open would then hold the library's lock
+     * forever, and with it every later ADB call. Null on timeout; a result that arrives late goes to [onLate].
+     */
+    private fun <T : Any> bounded(timeoutMs: Long, onLate: (T) -> Unit = {}, block: () -> T): T? {
+        val result = ArrayBlockingQueue<Result<T>>(1)
+        val abandoned = AtomicBoolean()
+        thread(isDaemon = true, name = "adb-call") {
+            val r = runCatching(block)
+            synchronized(abandoned) {
+                if (abandoned.get()) r.getOrNull()?.let(onLate) else result.offer(r)
+            }
+        }
+        result.poll(timeoutMs, TimeUnit.MILLISECONDS)?.let { return it.getOrThrow() }
+        synchronized(abandoned) {
+            abandoned.set(true)
+            result.poll()?.let { return it.getOrThrow() }
+        }
+        return null
+    }
+
+    /** Drops a connection that does not answer: the next call makes a new one. Streams on the old one end. */
+    private fun reset(stuck: Manager) {
+        Log.w(TAG, "ADB does not answer, reconnecting")
+        synchronized(this) { if (manager === stuck) manager = null }
+        thread(isDaemon = true, name = "adb-reset") { runCatching { stuck.disconnect() } } // closing it also frees the hung open
     }
 
     private fun connectTls(context: Context, m: Manager): Boolean {
@@ -153,8 +198,13 @@ object SelfAdb {
     @Throws(IOException::class)
     fun open(context: Context, service: String): AdbStream {
         if (!connect(context)) throw IOException("Wireless debugging is not reachable")
+        val m = manager(context)
         return try {
-            manager(context).openStream(service)
+            bounded(OPEN_TIMEOUT_MS, onLate = { runCatching { it.close() } }) { m.openStream(service) }
+                ?: run {
+                    reset(m)
+                    throw IOException("ADB did not answer opening $service")
+                }
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
             throw IOException(e)
@@ -163,7 +213,20 @@ object SelfAdb {
 
     @Throws(IOException::class)
     fun shell(context: Context, command: String): String =
-        open(context, "shell:$command").use { readAll(it.openInputStream()).toString(Charsets.UTF_8) }
+        open(context, "shell:$command").use { stream ->
+            within(stream, SHELL_TIMEOUT_MS) { readAll(stream.openInputStream()).toString(Charsets.UTF_8) }
+        }
+
+    /**
+     * Runs [block], which reads or writes [stream], for at most [timeoutMs]. The library can lose the phone's reply or the
+     * end of a stream, and a read then waits for ever: the stream is closed and an IOException thrown instead.
+     */
+    @Throws(IOException::class)
+    fun <T : Any> within(stream: AdbStream, timeoutMs: Long, block: () -> T): T =
+        bounded(timeoutMs, block = block) ?: run {
+            runCatching { stream.close() }
+            throw IOException("ADB stream did not answer in ${timeoutMs / 1000} s")
+        }
 
     fun step(context: Context): Step {
         if (!isSupported()) return Step.UNSUPPORTED

@@ -7,7 +7,10 @@
 package org.kde.kdeconnect.backends.lan
 
 import android.content.Context
+import android.os.ParcelFileDescriptor
 import android.os.SystemClock
+import android.system.Os
+import android.system.OsConstants
 import android.util.Log
 import androidx.annotation.WorkerThread
 import kotlinx.serialization.json.JsonPrimitive
@@ -182,6 +185,7 @@ class LanLink(
             server.setSoTimeout(10 * 1000)
 
             payloadSocket = server.accept()
+            if (np.type.startsWith("kdeconnect.mirror.")) limitStall(payloadSocket)
 
             // Convert to SSL if needed
             payloadSocket = convertToSslSocket(context, payloadSocket, deviceId,
@@ -229,6 +233,20 @@ class LanLink(
         }
     }
 
+    /**
+     * A live stream must not queue megabytes behind a link that stopped carrying data: with the Wi-Fi gone quiet, the kernel
+     * would retry for minutes while the window shows a frozen picture. Unacknowledged data older than this ends the
+     * connection, which ends the session, and the computer then offers to start a new one.
+     */
+    private fun limitStall(socket: Socket) {
+        runCatching {
+            socket.sendBufferSize = STREAM_SEND_BUFFER
+            ParcelFileDescriptor.fromSocket(socket).use {
+                Os.setsockoptInt(it.fileDescriptor, OsConstants.IPPROTO_TCP, TCP_USER_TIMEOUT, STREAM_STALL_TIMEOUT_MS)
+            }
+        }.onFailure { Log.w(TAG, "Could not limit stalls of the stream socket", it) }
+    }
+
     private fun receivedNetworkPacket(np: NetworkPacket) {
         if (np.hasPayloadTransferInfo()) {
             var payloadSocket = Socket()
@@ -254,5 +272,8 @@ class LanLink(
         private const val TAG = "LanLink"
         private const val MAX_PACKET_SIZE: Int = 32 * 1024 * 1024
         private const val PAYLOAD_BUFFER_SIZE: Int = 256 * 1024
+        private const val STREAM_SEND_BUFFER: Int = 128 * 1024
+        private const val STREAM_STALL_TIMEOUT_MS: Int = 10_000
+        private const val TCP_USER_TIMEOUT: Int = 18 // not in OsConstants
     }
 }

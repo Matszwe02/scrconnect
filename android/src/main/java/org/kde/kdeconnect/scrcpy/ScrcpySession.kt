@@ -103,7 +103,7 @@ class ScrcpySession(
         repeat(50) {
             if (closed.get()) throw IOException("Session closed")
             val stream = runCatching { SelfAdb.open(context, "localabstract:scrcpy_$scid") }.getOrNull()
-            if (stream != null && (!expectDummyByte || runCatching { stream.openInputStream().read() >= 0 }.getOrDefault(false))) {
+            if (stream != null && (!expectDummyByte || runCatching { SelfAdb.within(stream, SOCKET_TIMEOUT_MS) { stream.openInputStream().read() >= 0 } }.getOrDefault(false))) {
                 return track(stream)
             }
             stream?.close()
@@ -214,6 +214,8 @@ class ScrcpySession(
 
         private const val TAG = "ScrcpySession"
         private const val VERSION = "5.0.1"
+        private const val SOCKET_TIMEOUT_MS = 10_000L // the server accepts the first socket once it is up
+        private const val PUSH_TIMEOUT_MS = 20_000L
         private const val ASSET = "scrcpy-server-v$VERSION.jar"
         private val DISPLAY_ID = Regex("New display: .* \\(id=(\\d+)\\)")
         private val PACKAGE_NAME = Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")
@@ -228,21 +230,23 @@ class ScrcpySession(
         private fun pushServer(context: Context, path: String) {
             val jar = context.assets.open(ASSET).use { it.readBytes() }
             SelfAdb.open(context, "sync:").use { stream ->
-                fun header(id: String, value: Int) =
-                    ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).put(id.toByteArray()).putInt(value).array()
-                val out = stream.openOutputStream()
-                val target = "$path,420".toByteArray()
-                out.write(header("SEND", target.size) + target)
-                for (offset in jar.indices step 65536) {
-                    val n = minOf(65536, jar.size - offset)
-                    out.write(header("DATA", n))
-                    out.write(jar, offset, n)
+                SelfAdb.within(stream, PUSH_TIMEOUT_MS) {
+                    fun header(id: String, value: Int) =
+                        ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).put(id.toByteArray()).putInt(value).array()
+                    val out = stream.openOutputStream()
+                    val target = "$path,420".toByteArray()
+                    out.write(header("SEND", target.size) + target)
+                    for (offset in jar.indices step 65536) {
+                        val n = minOf(65536, jar.size - offset)
+                        out.write(header("DATA", n))
+                        out.write(jar, offset, n)
+                    }
+                    out.write(header("DONE", 0))
+                    out.flush()
+                    val reply = ByteArray(8)
+                    DataInputStream(stream.openInputStream()).readFully(reply)
+                    if (String(reply, 0, 4) != "OKAY") throw IOException("Could not copy the scrcpy server to the phone")
                 }
-                out.write(header("DONE", 0))
-                out.flush()
-                val reply = ByteArray(8)
-                DataInputStream(stream.openInputStream()).readFully(reply)
-                if (String(reply, 0, 4) != "OKAY") throw IOException("Could not copy the scrcpy server to the phone")
             }
         }
     }

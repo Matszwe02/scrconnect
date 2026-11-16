@@ -7,6 +7,7 @@
 #pragma once
 
 #include <QDBusInterface>
+#include <QDBusServiceWatcher>
 #include <QImage>
 #include <QLocalSocket>
 #include <QTimer>
@@ -69,6 +70,7 @@ private:
         return !m_options.packageName.isEmpty();
     }
     void stopSession();
+    void endSession(const QString &message);
     void readVideo();
     void setMessage(const QString &text);
     void send(const QByteArray &message);
@@ -84,6 +86,8 @@ private:
 
     MirrorOptions m_options;
     QDBusInterface m_plugin;
+    QDBusServiceWatcher m_daemonWatcher;
+    bool m_ended = false; // the session is over and nothing will revive it by itself: a click or key press starts a new one
     QString m_sessionId;
     QLocalSocket m_socket;
     QTimer m_retryTimer;

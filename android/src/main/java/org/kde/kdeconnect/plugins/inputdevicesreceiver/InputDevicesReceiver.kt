@@ -6,6 +6,8 @@
 package org.kde.kdeconnect.plugins.inputdevicesreceiver
 
 import android.hardware.display.DisplayManager
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Display
@@ -54,6 +56,29 @@ class InputDevicesReceiverPlugin : Plugin() {
     fun isLeapInput(np: NetworkPacket): Boolean =
         shellInput != null || (strayLeapInput(np) && SystemClock.elapsedRealtime() - lastReleaseAt <= RECLAIM_AFTER_MS)
 
+    /**
+     * While the phone holds the pointer it tells the computer every second. The computer gives up on a phone that falls
+     * silent (link lost, app hung) and takes the pointer back, instead of leaving the user without one. Runs on the main
+     * thread on purpose: it starts only once the phone has taken the pointer, so a phone stuck on the way never sends it.
+     */
+    private val heartbeatHandler = Handler(Looper.getMainLooper())
+    private val heartbeat = object : Runnable {
+        override fun run() {
+            if (shellInput == null && Cursor.enterEdge == NONE_EDGE) return
+            val np = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
+            np["alive"] = true
+            device.sendPacket(np)
+            heartbeatHandler.postDelayed(this, HEARTBEAT_MS)
+        }
+    }
+
+    private fun startHeartbeat() {
+        heartbeatHandler.removeCallbacks(heartbeat)
+        heartbeat.run()
+    }
+
+    private fun stopHeartbeat() = heartbeatHandler.removeCallbacks(heartbeat)
+
     private val metrics = DisplayMetrics()
     private lateinit var displayManager: DisplayManager
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -72,6 +97,7 @@ class InputDevicesReceiverPlugin : Plugin() {
 
     override fun onDestroy() {
         displayManager.unregisterDisplayListener(displayListener)
+        stopHeartbeat()
         endShellInput()
     }
 
@@ -95,6 +121,7 @@ class InputDevicesReceiverPlugin : Plugin() {
         val reply = NetworkPacket(PACKET_TYPE_SHAREINPUTDEVICES)
         reply["shellInput"] = true
         device.sendPacket(reply)
+        startHeartbeat()
         return true
     }
 
@@ -143,12 +170,17 @@ class InputDevicesReceiverPlugin : Plugin() {
         lastReleaseAt = SystemClock.elapsedRealtime()
         device.sendPacket(np)
         Cursor.enterEdge = NONE_EDGE
+        stopHeartbeat()
         KdeConnectAccessibilityService.instance?.hideCursorNow()
     }
 
     override fun onPacketReceived(np: NetworkPacket): Boolean {
         if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_LEAVE) {
-            endShellInput() // the computer took the pointer back
+            // The computer took the pointer back (hotkey, or it lost track of the phone): drop every way of holding it
+            endShellInput()
+            Cursor.enterEdge = NONE_EDGE
+            stopHeartbeat()
+            KdeConnectAccessibilityService.instance?.hideCursorNow()
             return true
         }
         if (np.type == PACKET_TYPE_SHAREINPUTDEVICES_REQUEST && startShellInput(np)) return true
@@ -203,6 +235,7 @@ class InputDevicesReceiverPlugin : Plugin() {
                 }
             }
             mouseReceiverPlugin.onPacketReceived(packet)
+            startHeartbeat()
         } else if (np.type == PACKET_TYPE_MOUSEPAD_REQUEST && np.has("dx") && Cursor.enterEdge != NONE_EDGE) {
             when (Cursor.enterEdge) {
                 TOP_EDGE -> if (Cursor.y == 0) release(Cursor.x, 0)
@@ -226,6 +259,7 @@ class InputDevicesReceiverPlugin : Plugin() {
         private const val BOTTOM_EDGE = 0x00001
         private const val NONE_EDGE = 0
         private const val RECLAIM_AFTER_MS = 1000L
+        private const val HEARTBEAT_MS = 1000L
 
         private const val PACKET_TYPE_MOUSEPAD_REQUEST = "kdeconnect.mousepad.request"
         private const val PACKET_TYPE_SHAREINPUTDEVICES = "kdeconnect.shareinputdevices"

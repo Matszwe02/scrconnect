@@ -29,6 +29,10 @@ using namespace Qt::StringLiterals;
 #define PACKET_TYPE_SHAREINPUTDEVICES_REQUEST u"kdeconnect.shareinputdevices.request"_s
 #define PACKET_TYPE_SHAREINPUTDEVICES_LEAVE u"kdeconnect.shareinputdevices.leave"_s
 
+// The phone sends a packet of type shareinputdevices (a heartbeat, "alive") every second while it holds the pointer
+constexpr int kWatchdogIntervalMs = 1000;
+constexpr int kPhoneSilenceLimitMs = 5000;
+
 QMap<int, int> specialKeysMap = {
     // 0,              // Invalid
     {Qt::Key_Backspace, 1},
@@ -82,6 +86,8 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
     connect(m_inputCaptureSession, &InputCaptureBackend::started, this, [this](const QLine &barrier, const QPointF &delta) {
         m_activatedBarrier = barrier;
         m_shellInput = false;
+        m_lastPhonePacket.restart();
+        m_watchdog.start();
         // "modded" and "along" (position along the edge, 0..1) are for this fork's phone app; others ignore them
         const double length = barrier.dx() ? barrier.dx() : barrier.dy();
         const double along = length ? (barrier.dx() ? delta.x() : delta.y()) / length : 0.5;
@@ -133,11 +139,18 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
                                                         "the InputCapture portal: Plasma 6.1 or GNOME 45 and newer, or an X11 session)."),
                                                    u"dialog-input-devices"_s);
     });
-    connect(m_inputCaptureSession, &InputCaptureBackend::escapeRequested, this, [this] {
-        m_inputCaptureSession->release(QPointF(m_activatedBarrier.p1() + m_activatedBarrier.p2()) / 2);
-        if (std::exchange(m_shellInput, false)) {
-            NetworkPacket packet(PACKET_TYPE_SHAREINPUTDEVICES_LEAVE);
-            sendPacket(packet);
+    connect(m_inputCaptureSession, &InputCaptureBackend::escapeRequested, this, &ShareInputDevicesPlugin::giveBack);
+    m_watchdog.setInterval(kWatchdogIntervalMs);
+    connect(&m_watchdog, &QTimer::timeout, this, [this] {
+        if (!m_inputCaptureSession->isActive()) {
+            m_watchdog.stop();
+        } else if (m_lastPhonePacket.hasExpired(kPhoneSilenceLimitMs)) {
+            qCWarning(KDECONNECT_PLUGIN_SHAREINPUTDEVICES) << "The phone has been silent for" << kPhoneSilenceLimitMs << "ms, taking the pointer back";
+            giveBack();
+            Daemon::instance()->sendSimpleNotification(u"notification"_s,
+                                                       i18n("Phone Leap"),
+                                                       i18n("The phone stopped responding, so the pointer was given back to this computer."),
+                                                       u"dialog-input-devices"_s);
         }
     });
     connect(m_inputCaptureSession, &InputCaptureBackend::key, this, [this](Qt::Key key, Qt::KeyboardModifiers modifiers, const QString &text) {
@@ -168,6 +181,16 @@ ShareInputDevicesPlugin::ShareInputDevicesPlugin(QObject *parent, const QVariant
     connect(config(), &KdeConnectPluginConfig::configChanged, this, applyConfig);
 }
 
+void ShareInputDevicesPlugin::giveBack()
+{
+    m_watchdog.stop();
+    m_inputCaptureSession->release(QPointF(m_activatedBarrier.p1() + m_activatedBarrier.p2()) / 2);
+    m_shellInput = false;
+    // Always: the phone may be holding the pointer in a way this computer does not know of
+    NetworkPacket packet(PACKET_TYPE_SHAREINPUTDEVICES_LEAVE);
+    sendPacket(packet);
+}
+
 // "leap" tells this fork's phone app Phone Leap's input from the remote control's and keyboard's; others ignore it
 void ShareInputDevicesPlugin::sendInput(QVariantMap input)
 {
@@ -184,6 +207,7 @@ Qt::Edge ShareInputDevicesPlugin::configuredEdge() const
 void ShareInputDevicesPlugin::receivePacket(const NetworkPacket &np)
 {
     if (np.type() == PACKET_TYPE_SHAREINPUTDEVICES) {
+        m_lastPhonePacket.restart();
         if (np.get<bool>(u"shellInput"_s)) {
             m_shellInput = true;
         }
